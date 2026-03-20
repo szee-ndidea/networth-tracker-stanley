@@ -538,22 +538,16 @@ with dashboard_tab:
             progress_ratio = max(0.0, min(progress_ratio, 1.0))
 
             goal_metric_1, goal_metric_2, goal_metric_3, goal_metric_4 = st.columns(4)
-            goal_metric_1.metric("Progress to Goal", f"{progress_ratio:.0%}")
+            goal_metric_1.metric("Years to Goal", f"{years_to_goal:,.1f}")
             goal_metric_2.metric("Remaining to Goal", format_currency(remaining_to_goal))
             goal_metric_3.metric("Increase Needed per Year", format_currency(yearly_increase_needed))
             goal_metric_4.metric("Increase Needed per Month", format_currency(monthly_increase_needed))
 
-            st.caption(
-                f"{format_currency(latest_net_worth)} current net worth vs {format_currency(goal_net_worth)} goal"
-            )
+            st.caption(f"{progress_ratio:.0%}")
             st.progress(progress_ratio)
 
             if total_increase_needed <= 0:
                 st.success("You are already at or above this goal based on your latest snapshot.")
-            else:
-                st.caption(
-                    f"Goal gap: {format_currency(remaining_to_goal)} remaining over {years_to_goal:,.1f} years"
-                )
 
 
 with data_tab:
