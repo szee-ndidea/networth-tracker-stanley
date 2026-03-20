@@ -59,7 +59,6 @@ def accounts_df():
     return pd.DataFrame(columns=["Account Name", "Section", "Type"])
 
 
-
 def snapshots_df():
     if st.session_state.snapshots:
         df = pd.DataFrame(st.session_state.snapshots)
@@ -68,7 +67,6 @@ def snapshots_df():
         df = df.dropna(subset=["Date", "Amount"])
         return df
     return pd.DataFrame(columns=["Date", "Account Name", "Section", "Type", "Amount"])
-
 
 
 def rebuild_accounts_from_snapshots():
@@ -85,13 +83,11 @@ def rebuild_accounts_from_snapshots():
         st.session_state.accounts = []
 
 
-
 def parse_amount(value):
     cleaned = str(value).replace(",", "").replace("$", "").strip()
     if cleaned == "":
         return 0.0
     return float(cleaned)
-
 
 
 def build_timeline(df):
@@ -125,7 +121,7 @@ Create the accounts you want to track over time. Add asset accounts at the top a
 Enter a full snapshot for a selected date by updating all tracked accounts. Use positive numbers for everything. Do not enter liabilities as negative values.
 
 **Dashboard**  
-Review your latest assets, liabilities, net worth, current trend, and goal planning metrics.
+Review your latest assets, liabilities, net worth, trend, liabilities breakdown, and goal planning metrics.
 
 **Download/Upload**  
 Download your net worth data as one CSV file, or upload that saved CSV file to resume from a previous session.
@@ -204,7 +200,9 @@ with accounts_tab:
 
     st.markdown("### Current Accounts")
     if not current_accounts.empty:
-        editable_accounts = current_accounts.sort_values(by=["Section", "Type", "Account Name"]).reset_index(drop=True).copy()
+        editable_accounts = current_accounts.sort_values(
+            by=["Section", "Type", "Account Name"]
+        ).reset_index(drop=True).copy()
         editable_accounts.insert(0, "Edit", False)
 
         edited_accounts = st.data_editor(
@@ -228,7 +226,11 @@ with accounts_tab:
             original_name = editable_accounts.loc[selected_index, "Account Name"]
             original_section = editable_accounts.loc[selected_index, "Section"]
             original_type = editable_accounts.loc[selected_index, "Type"]
-            valid_types = st.session_state.asset_types if original_section == "Asset" else st.session_state.liability_types
+            valid_types = (
+                st.session_state.asset_types
+                if original_section == "Asset"
+                else st.session_state.liability_types
+            )
             type_index = valid_types.index(original_type) if original_type in valid_types else 0
 
             st.markdown("### Edit Selected Account")
@@ -305,10 +307,14 @@ with update_tab:
                 section = row["Section"]
                 prefill = 0.0
 
-                if not existing_for_date.empty and ((existing_for_date["Account Name"] == account) & (existing_for_date["Section"] == section)).any():
+                if not existing_for_date.empty and (
+                    (existing_for_date["Account Name"] == account) &
+                    (existing_for_date["Section"] == section)
+                ).any():
                     prefill = float(
                         existing_for_date.loc[
-                            (existing_for_date["Account Name"] == account) & (existing_for_date["Section"] == section),
+                            (existing_for_date["Account Name"] == account) &
+                            (existing_for_date["Section"] == section),
                             "Amount",
                         ].iloc[0]
                     )
@@ -380,6 +386,109 @@ with dashboard_tab:
         chart_df = timeline[["Snapshot_Date", "Net Worth"]].set_index("Snapshot_Date")
         st.line_chart(chart_df)
 
+        st.markdown("### Liabilities")
+
+        liquid_asset_types = [
+            "Cash",
+            "Checking",
+            "Savings",
+            "Money Market",
+            "Certificate of Deposit",
+        ]
+
+        short_term_liability_types = [
+            "Credit Card",
+            "Medical Debt",
+            "Tax Debt",
+            "Buy Now Pay Later",
+            "Personal Loan",
+        ]
+
+        long_term_liability_types = [
+            "Mortgage",
+            "HELOC",
+            "Student Loan",
+            "Auto Loan",
+            "Business Loan",
+        ]
+
+        liquid_assets = float(
+            latest_df[
+                (latest_df["Section"] == "Asset") &
+                (latest_df["Type"].isin(liquid_asset_types))
+            ]["Amount"].sum()
+        )
+
+        total_liabilities = float(
+            latest_df[latest_df["Section"] == "Liability"]["Amount"].sum()
+        )
+
+        short_term_liabilities = float(
+            latest_df[
+                (latest_df["Section"] == "Liability") &
+                (latest_df["Type"].isin(short_term_liability_types))
+            ]["Amount"].sum()
+        )
+
+        long_term_liabilities = float(
+            latest_df[
+                (latest_df["Section"] == "Liability") &
+                (latest_df["Type"].isin(long_term_liability_types))
+            ]["Amount"].sum()
+        )
+
+        other_liabilities = max(
+            total_liabilities - short_term_liabilities - long_term_liabilities,
+            0.0
+        )
+
+        liquidity_to_total = liquid_assets / total_liabilities if total_liabilities > 0 else 0.0
+        liquidity_to_short = liquid_assets / short_term_liabilities if short_term_liabilities > 0 else 0.0
+
+        liab_col1, liab_col2, liab_col3, liab_col4 = st.columns(4)
+        liab_col1.metric("Total Liabilities", f"${total_liabilities:,.2f}")
+        liab_col2.metric("Short Term", f"${short_term_liabilities:,.2f}")
+        liab_col3.metric("Long Term", f"${long_term_liabilities:,.2f}")
+        liab_col4.metric("Liquid Assets", f"${liquid_assets:,.2f}")
+
+        ratio_col1, ratio_col2 = st.columns(2)
+        ratio_col1.metric("Liquidity to Total Liabilities", f"{liquidity_to_total:,.2f}")
+        ratio_col2.metric("Liquidity to Short Term Liabilities", f"{liquidity_to_short:,.2f}")
+
+        st.markdown("#### Liability Breakdown")
+        liability_breakdown_df = pd.DataFrame(
+            {
+                "Amount": [
+                    short_term_liabilities,
+                    long_term_liabilities,
+                    other_liabilities,
+                ]
+            },
+            index=[
+                "Short Term Liabilities",
+                "Long Term Liabilities",
+                "Other Liabilities",
+            ],
+        )
+        st.bar_chart(liability_breakdown_df)
+
+        st.markdown("#### Liquid Assets vs Liabilities")
+        coverage_df = pd.DataFrame(
+            {
+                "Amount": [
+                    liquid_assets,
+                    short_term_liabilities,
+                    total_liabilities,
+                ]
+            },
+            index=[
+                "Liquid Assets",
+                "Short Term Liabilities",
+                "Total Liabilities",
+            ],
+        )
+        st.bar_chart(coverage_df)
+
         st.markdown("### Goal Planning")
         today_date = date.today()
         goal_col1, goal_col2 = st.columns(2)
@@ -414,21 +523,6 @@ with dashboard_tab:
             goal_metric_1.metric("Years to goal", f"{years_to_goal:,.1f}")
             goal_metric_2.metric("Increase needed per year", f"${yearly_increase_needed:,.2f}")
             goal_metric_3.metric("Increase needed per month", f"${monthly_increase_needed:,.2f}")
-
-            progress_amount = min(latest_net_worth, goal_net_worth) if goal_net_worth > 0 else 0.0
-            remaining_amount = max(goal_net_worth - latest_net_worth, 0.0)
-            progress_pct = (progress_amount / goal_net_worth * 100) if goal_net_worth > 0 else 0.0
-
-            st.markdown("### Goal Progress")
-            st.progress(min(max(progress_pct / 100, 0.0), 1.0))
-
-            progress_chart_df = pd.DataFrame(
-                {
-                    "Amount": [progress_amount, remaining_amount],
-                },
-                index=["Already Built", "Still Needed"],
-            )
-            st.bar_chart(progress_chart_df)
 
             if total_increase_needed <= 0:
                 st.success("You are already at or above this goal based on your latest snapshot.")
@@ -483,5 +577,6 @@ with data_tab:
 st.divider()
 st.caption(
     "Prototype version with reusable accounts, full-date snapshots, dashboard trend chart, "
-    "goal planning, and single-file CSV import/export. Data is not stored permanently unless you download your CSV file."
+    "goal planning, liabilities analysis, and single-file CSV import/export. "
+    "Data is not stored permanently unless you download your CSV file."
 )
