@@ -120,47 +120,6 @@ def build_timeline(df):
     return timeline
 
 
-def build_liquidity_history(df, liquid_asset_types, short_term_liability_types):
-    grouped = (
-        df.assign(Snapshot_Date=df["Date"].dt.date)
-        .groupby(["Snapshot_Date", "Section", "Type"], as_index=False)["Amount"]
-        .sum()
-    )
-
-    liquid_assets = (
-        grouped[
-            (grouped["Section"] == "Asset")
-            & (grouped["Type"].isin(liquid_asset_types))
-        ]
-        .groupby("Snapshot_Date", as_index=False)["Amount"]
-        .sum()
-        .rename(columns={"Amount": "Liquid Assets"})
-    )
-
-    short_term_liabilities = (
-        grouped[
-            (grouped["Section"] == "Liability")
-            & (grouped["Type"].isin(short_term_liability_types))
-        ]
-        .groupby("Snapshot_Date", as_index=False)["Amount"]
-        .sum()
-        .rename(columns={"Amount": "Short Term Liabilities"})
-    )
-
-    total_liabilities = (
-        grouped[grouped["Section"] == "Liability"]
-        .groupby("Snapshot_Date", as_index=False)["Amount"]
-        .sum()
-        .rename(columns={"Amount": "Total Liabilities"})
-    )
-
-    history = liquid_assets.merge(short_term_liabilities, on="Snapshot_Date", how="outer")
-    history = history.merge(total_liabilities, on="Snapshot_Date", how="outer").fillna(0)
-    history["Snapshot_Date"] = pd.to_datetime(history["Snapshot_Date"])
-    history = history.sort_values("Snapshot_Date")
-    return history
-
-
 def coverage_label(value):
     if value >= 1.0:
         return "Covered"
@@ -181,7 +140,7 @@ Create the accounts you want to track over time. Add asset accounts at the top a
 Enter a full snapshot for a selected date by updating all tracked accounts. Use positive numbers for everything. Do not enter liabilities as negative values.
 
 **Dashboard**  
-Review your latest assets, liabilities, net worth, trend, liabilities breakdown, and goal planning metrics.
+Review your latest assets, liabilities, net worth, trend, and goal planning metrics.
 
 **Download/Upload**  
 Download your net worth data as one CSV file, or upload that saved CSV file to resume from a previous session.
@@ -509,11 +468,6 @@ with dashboard_tab:
             ]["Amount"].sum()
         )
 
-        other_liabilities = max(
-            total_liabilities - short_term_liabilities - long_term_liabilities,
-            0.0
-        )
-
         liquidity_to_total = liquid_assets / total_liabilities if total_liabilities > 0 else 0.0
         liquidity_to_short = liquid_assets / short_term_liabilities if short_term_liabilities > 0 else 0.0
 
@@ -545,108 +499,6 @@ with dashboard_tab:
             else:
                 st.caption("Coverage of short term liabilities: No short term liabilities")
                 st.progress(1.0)
-
-        chart_col1, chart_col2 = st.columns(2)
-
-        with chart_col1:
-            st.markdown("#### Liability Mix")
-            liability_mix_df = pd.DataFrame(
-                {
-                    "Category": [
-                        "Short Term",
-                        "Long Term",
-                        "Other",
-                    ],
-                    "Amount": [
-                        short_term_liabilities,
-                        long_term_liabilities,
-                        other_liabilities,
-                    ],
-                }
-            )
-
-            liability_mix_chart = (
-                alt.Chart(liability_mix_df)
-                .mark_bar()
-                .encode(
-                    x=alt.X("Amount:Q", title="Amount"),
-                    y=alt.Y("Category:N", sort=["Short Term", "Long Term", "Other"], title=""),
-                    tooltip=[
-                        alt.Tooltip("Category:N"),
-                        alt.Tooltip("Amount:Q", format=",.2f"),
-                    ],
-                )
-                .properties(height=220)
-            )
-            st.altair_chart(liability_mix_chart, use_container_width=True)
-
-        with chart_col2:
-            st.markdown("#### Liquidity Coverage")
-            coverage_df = pd.DataFrame(
-                {
-                    "Category": [
-                        "Liquid Assets",
-                        "Short Term Liabilities",
-                        "Total Liabilities",
-                    ],
-                    "Amount": [
-                        liquid_assets,
-                        short_term_liabilities,
-                        total_liabilities,
-                    ],
-                }
-            )
-
-            coverage_chart = (
-                alt.Chart(coverage_df)
-                .mark_bar()
-                .encode(
-                    x=alt.X("Amount:Q", title="Amount"),
-                    y=alt.Y(
-                        "Category:N",
-                        sort=["Liquid Assets", "Short Term Liabilities", "Total Liabilities"],
-                        title="",
-                    ),
-                    tooltip=[
-                        alt.Tooltip("Category:N"),
-                        alt.Tooltip("Amount:Q", format=",.2f"),
-                    ],
-                )
-                .properties(height=220)
-            )
-            st.altair_chart(coverage_chart, use_container_width=True)
-
-        liquidity_history = build_liquidity_history(
-            df,
-            liquid_asset_types=liquid_asset_types,
-            short_term_liability_types=short_term_liability_types,
-        )
-
-        if len(liquidity_history) > 1:
-            st.markdown("#### Liquidity vs Liabilities Over Time")
-            history_long = liquidity_history.melt(
-                id_vars="Snapshot_Date",
-                value_vars=["Liquid Assets", "Short Term Liabilities", "Total Liabilities"],
-                var_name="Series",
-                value_name="Amount",
-            )
-
-            history_chart = (
-                alt.Chart(history_long)
-                .mark_line(point=True)
-                .encode(
-                    x=alt.X("Snapshot_Date:T", title="Date"),
-                    y=alt.Y("Amount:Q", title="Amount"),
-                    color=alt.Color("Series:N", title=""),
-                    tooltip=[
-                        alt.Tooltip("Snapshot_Date:T", title="Date"),
-                        alt.Tooltip("Series:N", title="Series"),
-                        alt.Tooltip("Amount:Q", title="Amount", format=",.2f"),
-                    ],
-                )
-                .properties(height=300)
-            )
-            st.altair_chart(history_chart, use_container_width=True)
 
         st.markdown("### Goal Planning")
         today_date = date.today()
@@ -768,6 +620,6 @@ with data_tab:
 st.divider()
 st.caption(
     "Prototype version with reusable accounts, full-date snapshots, dashboard trend chart, "
-    "goal planning, liabilities analysis, and single-file CSV import/export. "
+    "goal planning, liabilities coverage, and single-file CSV import/export. "
     "Data is not stored permanently unless you download your CSV file."
 )
