@@ -87,38 +87,63 @@ accounts_tab, update_tab, dashboard_tab, data_tab = st.tabs([
 
 with accounts_tab:
     st.subheader("Accounts")
-    st.write("Create the accounts you want to track over time. You only need to create each account once.")
+    st.write("Create the accounts you want to track over time. Add asset accounts at the top and debt accounts below.")
 
-    with st.form("account_form", clear_on_submit=True):
+    st.markdown("### Add Asset Account")
+    with st.form("asset_account_form", clear_on_submit=True):
         col1, col2 = st.columns(2)
         with col1:
-            account_name = st.text_input("Account name", placeholder="Example: Fidelity 401(k)")
-            section = st.radio("Is this an asset or debt?", ["Asset", "Debt"], horizontal=True)
+            asset_account_name = st.text_input("Asset account name", placeholder="Example: Fidelity 401(k)")
         with col2:
-            if section == "Asset":
-                selected_type = st.selectbox("Asset type", st.session_state.asset_types, key="asset_type_select")
-            else:
-                selected_type = st.selectbox("Debt type", st.session_state.debt_types, key="debt_type_select")
-            account_notes = st.text_input("Notes", placeholder="Optional")
+            asset_selected_type = st.selectbox("Asset type", st.session_state.asset_types, key="asset_type_select")
+            asset_account_notes = st.text_input("Asset notes", placeholder="Optional")
 
-        add_account = st.form_submit_button("Add account")
-        if add_account:
+        add_asset_account = st.form_submit_button("Add asset account")
+        if add_asset_account:
             existing_names = {a["Account Name"].strip().lower() for a in st.session_state.accounts}
-            if not account_name.strip():
-                st.error("Please enter an account name.")
-            elif account_name.strip().lower() in existing_names:
+            if not asset_account_name.strip():
+                st.error("Please enter an asset account name.")
+            elif asset_account_name.strip().lower() in existing_names:
                 st.error("That account already exists.")
             else:
                 st.session_state.accounts.append(
                     {
-                        "Account Name": account_name.strip(),
-                        "Section": section,
-                        "Type": selected_type,
-                        "Notes": account_notes.strip(),
+                        "Account Name": asset_account_name.strip(),
+                        "Section": "Asset",
+                        "Type": asset_selected_type,
+                        "Notes": asset_account_notes.strip(),
                     }
                 )
-                st.success("Account added.")
+                st.success("Asset account added.")
 
+    st.markdown("### Add Debt Account")
+    with st.form("debt_account_form", clear_on_submit=True):
+        col1, col2 = st.columns(2)
+        with col1:
+            debt_account_name = st.text_input("Debt account name", placeholder="Example: Chase Visa")
+        with col2:
+            debt_selected_type = st.selectbox("Debt type", st.session_state.debt_types, key="debt_type_select")
+            debt_account_notes = st.text_input("Debt notes", placeholder="Optional")
+
+        add_debt_account = st.form_submit_button("Add debt account")
+        if add_debt_account:
+            existing_names = {a["Account Name"].strip().lower() for a in st.session_state.accounts}
+            if not debt_account_name.strip():
+                st.error("Please enter a debt account name.")
+            elif debt_account_name.strip().lower() in existing_names:
+                st.error("That account already exists.")
+            else:
+                st.session_state.accounts.append(
+                    {
+                        "Account Name": debt_account_name.strip(),
+                        "Section": "Debt",
+                        "Type": debt_selected_type,
+                        "Notes": debt_account_notes.strip(),
+                    }
+                )
+                st.success("Debt account added.")
+
+    st.markdown("### Current Accounts")
     current_accounts = accounts_df()
     if not current_accounts.empty:
         st.dataframe(
