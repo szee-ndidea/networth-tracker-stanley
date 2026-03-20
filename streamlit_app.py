@@ -382,19 +382,28 @@ with dashboard_tab:
 
         st.markdown("### Goal Planning")
         today_date = date.today()
+        default_goal_date = today_date.replace(year=today_date.year + 10)
+
         goal_col1, goal_col2 = st.columns(2)
         with goal_col1:
             st.metric("Net Worth Today", f"${latest_net_worth:,.2f}")
             st.caption(f"Using latest snapshot from {latest_date.strftime('%B %d, %Y')} as of today, {today_date.strftime('%B %d, %Y')}.")
         with goal_col2:
-            goal_net_worth = st.number_input("Goal net worth", min_value=0.0, step=10000.0, format="%.2f")
-            goal_end_date = st.date_input("Goal end date", value=today_date.replace(year=today_date.year + 10), min_value=today_date)
+            goal_text = st.text_input("Goal net worth", value="1,000,000")
+            goal_years = st.radio("Years to goal", [5, 10, 15, 20], horizontal=True)
 
+        try:
+            goal_net_worth = parse_amount(goal_text)
+        except ValueError:
+            goal_net_worth = None
+
+        goal_end_date = today_date.replace(year=today_date.year + goal_years)
         days_to_goal = (goal_end_date - today_date).days
-        if days_to_goal <= 0:
-            st.error("Choose a goal end date after today.")
+
+        if goal_net_worth is None:
+            st.error("Enter a valid goal net worth. You can use commas like 1,500,000.")
         elif goal_net_worth <= 0:
-            st.info("Enter a goal net worth and end date to calculate the required yearly increase.")
+            st.info("Enter a goal net worth to calculate the required yearly increase.")
         else:
             total_increase_needed = goal_net_worth - latest_net_worth
             years_to_goal = days_to_goal / 365.25
@@ -402,14 +411,22 @@ with dashboard_tab:
             monthly_increase_needed = yearly_increase_needed / 12
 
             goal_metric_1, goal_metric_2, goal_metric_3 = st.columns(3)
-            goal_metric_1.metric("Years to goal", f"{years_to_goal:,.1f}")
+            goal_metric_1.metric("Years to goal", f"{goal_years}")
             goal_metric_2.metric("Increase needed per year", f"${yearly_increase_needed:,.2f}")
             goal_metric_3.metric("Increase needed per month", f"${monthly_increase_needed:,.2f}")
 
+            gap_remaining = max(total_increase_needed, 0.0)
+            goal_chart_df = pd.DataFrame(
+                {
+                    "Amount": [latest_net_worth, gap_remaining],
+                },
+                index=["Current Net Worth", "Additional Needed"],
+            )
+            st.markdown("### Goal Gap")
+            st.bar_chart(goal_chart_df)
+
             if total_increase_needed <= 0:
                 st.success("You are already at or above this goal based on your latest snapshot.")
-            else:
-                st.info(f"To grow from ${latest_net_worth:,.2f} to ${goal_net_worth:,.2f} by {goal_end_date.strftime('%B %d, %Y')}, you would need an average net worth increase of ${yearly_increase_needed:,.2f} per year.")
 
 
 with data_tab:
