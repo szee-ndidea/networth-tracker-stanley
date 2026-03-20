@@ -8,6 +8,30 @@ st.set_page_config(page_title="Net Worth Tracker", page_icon="💰", layout="wid
 st.title("Net Worth Tracker")
 st.caption("Track accounts, balances, and net worth over time.")
 
+st.markdown("""
+<style>
+.close-status-box {
+    background-color: #fff7e6;
+    border: 2px solid #d97706;
+    border-radius: 0.5rem;
+    padding: 0.9rem 1rem;
+    margin-top: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+.close-status-label {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #92400e;
+    margin-bottom: 0.25rem;
+}
+.close-status-text {
+    font-size: 1rem;
+    color: #1f2937;
+    line-height: 1.5;
+}
+</style>
+""", unsafe_allow_html=True)
+
 
 def init_state():
     if "asset_types" not in st.session_state:
@@ -547,12 +571,14 @@ with dashboard_tab:
             goal_metric_3.metric("Increase Needed per Year", format_currency(yearly_increase_needed))
             goal_metric_4.metric("Increase Needed per Month", format_currency(monthly_increase_needed))
 
-            st.caption(f"Progress toward goal: {progress_ratio:.0%}")
-            st.progress(progress_ratio)
-
             if total_increase_needed <= 0:
                 st.success("You are already at or above this goal based on your latest snapshot.")
+                st.caption("Progress toward goal: 100%")
+                st.progress(1.0)
             else:
+                st.caption(f"Progress toward goal: {progress_ratio:.0%}")
+                st.progress(progress_ratio)
+
                 if len(timeline) >= 2:
                     first_row = timeline.iloc[0]
                     last_row = timeline.iloc[-1]
@@ -591,19 +617,25 @@ with dashboard_tab:
 
                             if pace_ratio > upper_close_pace_threshold:
                                 st.success(
-                                    f"Your average yearly increase of approximately {hist_text} is on pace to achieve your goal. "
+                                    f"On track: your average yearly increase of approximately {hist_text} is on pace to achieve your goal. "
                                     f"That is above the required pace of about {req_text} per year."
                                 )
                             elif lower_close_pace_threshold <= pace_ratio <= upper_close_pace_threshold:
-                                with st.container(border=True):
-                                    st.markdown(
-                                        f"**Close to pace**  \n"
-                                        f"Your average yearly increase of approximately {hist_text} is close to the pace needed to achieve your goal. "
-                                        f"You need about {req_text} per year, so this could be close."
-                                    )
+                                st.markdown(
+                                    f"""
+                                    <div class="close-status-box">
+                                        <div class="close-status-label">Close</div>
+                                        <div class="close-status-text">
+                                            Your average yearly increase of approximately {hist_text} is close to the pace needed to achieve your goal.
+                                            You need about {req_text} per year, so this could go either way.
+                                        </div>
+                                    </div>
+                                    """,
+                                    unsafe_allow_html=True
+                                )
                             else:
                                 st.error(
-                                    f"Your average yearly increase of approximately {hist_text} is below the pace needed to achieve your goal. "
+                                    f"Off track: your average yearly increase of approximately {hist_text} is below the pace needed to achieve your goal. "
                                     f"You need about {req_text} per year to stay on track."
                                 )
                     else:
