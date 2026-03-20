@@ -10,24 +10,51 @@ st.caption("Track accounts, balances, and net worth over time.")
 
 st.markdown("""
 <style>
-.close-status-box {
-    background-color: #fff7e6;
-    border: 2px solid #d97706;
-    border-radius: 0.5rem;
-    padding: 0.9rem 1rem;
-    margin-top: 0.5rem;
-    margin-bottom: 0.5rem;
+.status-box {
+    border-radius: 0.6rem;
+    padding: 0.95rem 1rem;
+    margin-top: 0.6rem;
+    margin-bottom: 0.4rem;
+    border: 2px solid;
 }
-.close-status-label {
+.status-label {
     font-size: 0.95rem;
-    font-weight: 600;
-    color: #92400e;
-    margin-bottom: 0.25rem;
+    font-weight: 700;
+    margin-bottom: 0.2rem;
 }
-.close-status-text {
+.status-text {
     font-size: 1rem;
-    color: #1f2937;
     line-height: 1.5;
+}
+.status-on-track {
+    background-color: #ecfdf3;
+    border-color: #16a34a;
+}
+.status-on-track .status-label {
+    color: #166534;
+}
+.status-on-track .status-text {
+    color: #1f2937;
+}
+.status-close {
+    background-color: #fff7e6;
+    border-color: #d97706;
+}
+.status-close .status-label {
+    color: #92400e;
+}
+.status-close .status-text {
+    color: #1f2937;
+}
+.status-off-track {
+    background-color: #fef2f2;
+    border-color: #dc2626;
+}
+.status-off-track .status-label {
+    color: #991b1b;
+}
+.status-off-track .status-text {
+    color: #1f2937;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -157,6 +184,18 @@ def coverage_label(value):
     if value > 0:
         return "Partial"
     return "None"
+
+
+def render_status_box(status_class, label, text):
+    st.markdown(
+        f"""
+        <div class="status-box {status_class}">
+            <div class="status-label">{label}</div>
+            <div class="status-text">{text}</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 
 with st.sidebar:
@@ -572,9 +611,13 @@ with dashboard_tab:
             goal_metric_4.metric("Increase Needed per Month", format_currency(monthly_increase_needed))
 
             if total_increase_needed <= 0:
-                st.success("You are already at or above this goal based on your latest snapshot.")
                 st.caption("Progress toward goal: 100%")
                 st.progress(1.0)
+                render_status_box(
+                    "status-on-track",
+                    "On Track",
+                    "Your current net worth is already at or above your goal."
+                )
             else:
                 st.caption(f"Progress toward goal: {progress_ratio:.0%}")
                 st.progress(progress_ratio)
@@ -586,14 +629,16 @@ with dashboard_tab:
                     history_days = (last_row["Snapshot_Date"] - first_row["Snapshot_Date"]).days
                     history_years = history_days / 365.25 if history_days > 0 else 0
 
-                    if history_years > 0 and first_row["Net Worth"] > 0 and last_row["Net Worth"] > 0 and latest_net_worth > 0:
+                    if history_years > 0 and first_row["Net Worth"] > 0 and latest_net_worth > 0:
                         historical_yearly_rate = (
-                            (last_row["Net Worth"] / first_row["Net Worth"]) ** (1 / history_years)
-                        ) - 1
+                            ((last_row["Net Worth"] - first_row["Net Worth"]) / history_years)
+                            / first_row["Net Worth"]
+                        )
 
                         required_yearly_rate = (
-                            (goal_net_worth / latest_net_worth) ** (1 / years_to_goal)
-                        ) - 1 if years_to_goal > 0 else 0.0
+                            ((goal_net_worth - latest_net_worth) / years_to_goal)
+                            / latest_net_worth
+                        ) if years_to_goal > 0 else 0.0
 
                         comparison_col1, comparison_col2 = st.columns(2)
                         comparison_col1.metric(
@@ -609,37 +654,39 @@ with dashboard_tab:
                         upper_close_pace_threshold = 1.05
 
                         if required_yearly_rate <= 0:
-                            st.success("Your goal is already achieved or does not require additional growth.")
+                            render_status_box(
+                                "status-on-track",
+                                "On Track",
+                                "Your goal does not require additional yearly growth from your current net worth."
+                            )
                         else:
                             pace_ratio = historical_yearly_rate / required_yearly_rate
                             hist_text = format_percent(historical_yearly_rate)
                             req_text = format_percent(required_yearly_rate)
 
                             if pace_ratio > upper_close_pace_threshold:
-                                st.success(
-                                    f"On track: your average yearly increase of approximately {hist_text} is on pace to achieve your goal. "
-                                    f"That is above the required pace of about {req_text} per year."
+                                render_status_box(
+                                    "status-on-track",
+                                    "On Track",
+                                    f"Your average yearly increase of approximately {hist_text} is on pace to achieve your goal. "
+                                    f"You need about {req_text} per year."
                                 )
                             elif lower_close_pace_threshold <= pace_ratio <= upper_close_pace_threshold:
-                                st.markdown(
-                                    f"""
-                                    <div class="close-status-box">
-                                        <div class="close-status-label">Close</div>
-                                        <div class="close-status-text">
-                                            Your average yearly increase of approximately {hist_text} is close to the pace needed to achieve your goal.
-                                            You need about {req_text} per year, so this could go either way.
-                                        </div>
-                                    </div>
-                                    """,
-                                    unsafe_allow_html=True
+                                render_status_box(
+                                    "status-close",
+                                    "Close",
+                                    f"Your average yearly increase of approximately {hist_text} is close to the pace needed to achieve your goal. "
+                                    f"You need about {req_text} per year."
                                 )
                             else:
-                                st.error(
-                                    f"Off track: your average yearly increase of approximately {hist_text} is below the pace needed to achieve your goal. "
-                                    f"You need about {req_text} per year to stay on track."
+                                render_status_box(
+                                    "status-off-track",
+                                    "Off Track",
+                                    f"Your average yearly increase of approximately {hist_text} is below the pace needed to achieve your goal. "
+                                    f"You need about {req_text} per year."
                                 )
                     else:
-                        st.info("Average yearly percentage increase requires positive net worth values across your history and for your current snapshot.")
+                        st.info("Average yearly percentage increase requires a positive starting net worth and a positive current net worth.")
                 else:
                     st.info("Add at least two snapshots on different dates to compare your historical yearly increase to your goal pace.")
 
