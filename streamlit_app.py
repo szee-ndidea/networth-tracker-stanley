@@ -96,6 +96,10 @@ def format_currency(value):
     return f"${value:,.2f}"
 
 
+def format_currency_rounded(value):
+    return f"${round(value):,}"
+
+
 def format_ratio(value):
     return f"{value:,.2f}x"
 
@@ -571,12 +575,30 @@ with dashboard_tab:
                             format_currency(yearly_increase_needed),
                         )
 
-                        if historical_yearly_increase >= yearly_increase_needed:
-                            st.success("Your average yearly increase so far is on pace to reach this goal.")
+                        pace_ratio = (
+                            historical_yearly_increase / yearly_increase_needed
+                            if yearly_increase_needed > 0 else 0.0
+                        )
+
+                        avg_text = format_currency_rounded(historical_yearly_increase)
+                        req_text = format_currency_rounded(yearly_increase_needed)
+
+                        if pace_ratio >= 1.0:
+                            st.success(
+                                f"Your average yearly increase of approximately {avg_text} is on pace to reach this goal. "
+                                f"That is at or above the required pace of about {req_text} per year."
+                            )
+                        elif pace_ratio >= 0.9:
+                            gap_to_required = yearly_increase_needed - historical_yearly_increase
+                            st.warning(
+                                f"Your average yearly increase of approximately {avg_text} is close to the pace needed for this goal. "
+                                f"You need about {req_text} per year, so this is within a narrow margin of roughly {format_currency_rounded(gap_to_required)} per year."
+                            )
                         else:
                             gap_to_required = yearly_increase_needed - historical_yearly_increase
-                            st.info(
-                                f"Your average yearly increase so far is {format_currency(gap_to_required)} below the pace needed for this goal."
+                            st.error(
+                                f"Your average yearly increase of approximately {avg_text} is below the pace needed for this goal. "
+                                f"You need about {req_text} per year, which is roughly {format_currency_rounded(gap_to_required)} more per year than your historical average."
                             )
                     else:
                         st.info("Add snapshots across more than one date to compare your historical yearly increase to your goal pace.")
