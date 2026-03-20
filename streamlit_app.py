@@ -77,17 +77,33 @@ def parse_amount(value):
     return float(cleaned)
 
 
+with st.sidebar:
+    st.header("How to use this app")
+    st.markdown("""
+**Accounts**
+Create the accounts you want to track over time. Add asset accounts at the top of the Accounts tab and liability accounts below. You only need to create each account once.
+
+**Update Balances**
+Enter a full snapshot for a selected date by updating all tracked accounts. Use positive numbers for everything. Do not enter liabilities as negative values.
+
+**Dashboard**
+Review your latest assets, liabilities, net worth, and the net worth trend over time.
+
+**Download/Upload**
+Download your accounts and snapshots as CSV files, or upload saved CSV files to resume from a previous session.
+""")
+
 accounts_tab, update_tab, dashboard_tab, data_tab = st.tabs([
     "Accounts",
     "Update Balances",
     "Dashboard",
-    "Data",
+    "Download/Upload",
 ])
 
 
 with accounts_tab:
     st.subheader("Accounts")
-    st.write("Create the accounts you want to track over time. Add asset accounts at the top and debt accounts below.")
+    st.write("Create the accounts you want to track over time. Add asset accounts at the top and liability accounts below.")
 
     st.markdown("### Add Asset Account")
     with st.form("asset_account_form", clear_on_submit=True):
@@ -116,20 +132,20 @@ with accounts_tab:
                 )
                 st.success("Asset account added.")
 
-    st.markdown("### Add Debt Account")
+    st.markdown("### Add Liability Account")
     with st.form("debt_account_form", clear_on_submit=True):
         col1, col2 = st.columns(2)
         with col1:
-            debt_account_name = st.text_input("Debt account name", placeholder="Example: Chase Visa")
+            debt_account_name = st.text_input("Liability account name", placeholder="Example: Chase Visa")
         with col2:
-            debt_selected_type = st.selectbox("Debt type", st.session_state.debt_types, key="debt_type_select")
-            debt_account_notes = st.text_input("Debt notes", placeholder="Optional")
+            debt_selected_type = st.selectbox("Liability type", st.session_state.debt_types, key="debt_type_select")
+            debt_account_notes = st.text_input("Liability notes", placeholder="Optional")
 
-        add_debt_account = st.form_submit_button("Add debt account")
+        add_debt_account = st.form_submit_button("Add liability account")
         if add_debt_account:
             existing_names = {a["Account Name"].strip().lower() for a in st.session_state.accounts}
             if not debt_account_name.strip():
-                st.error("Please enter a debt account name.")
+                st.error("Please enter a liability account name.")
             elif debt_account_name.strip().lower() in existing_names:
                 st.error("That account already exists.")
             else:
@@ -141,7 +157,7 @@ with accounts_tab:
                         "Notes": debt_account_notes.strip(),
                     }
                 )
-                st.success("Debt account added.")
+                st.success("Liability account added.")
 
     st.markdown("### Current Accounts")
     current_accounts = accounts_df()
@@ -157,7 +173,7 @@ with accounts_tab:
 
 with update_tab:
     st.subheader("Update Balances")
-    st.write("Enter one full snapshot for a date by updating all tracked accounts.")
+    st.write("Enter one full snapshot for a date by updating all tracked accounts. Use positive numbers for both assets and liabilities. Do not enter liabilities as negative values.")
 
     current_accounts = accounts_df()
     if current_accounts.empty:
@@ -255,7 +271,7 @@ with dashboard_tab:
 
         col1, col2, col3 = st.columns(3)
         col1.metric("Assets", f"${latest_assets:,.2f}")
-        col2.metric("Debts", f"${latest_debts:,.2f}")
+        col2.metric("Liabilities", f"${latest_debts:,.2f}")
         col3.metric("Net Worth", f"${latest_net_worth:,.2f}")
 
         timeline = (
@@ -284,7 +300,7 @@ with dashboard_tab:
             columns={
                 "Snapshot_Date": "Snapshot Date",
                 "Asset": "Assets",
-                "Debt": "Debts",
+                "Debt": "Liabilities",
             }
         )
         st.dataframe(display_timeline, use_container_width=True, hide_index=True)
@@ -298,8 +314,8 @@ with dashboard_tab:
 
 
 with data_tab:
-    st.subheader("Data")
-    st.write("Export your current data or upload saved files to continue from a previous session.")
+    st.subheader("Download/Upload")
+    st.write("Download your current data or upload saved files to continue from a previous session.")
 
     current_accounts = accounts_df()
     current_snapshots = snapshots_df()
