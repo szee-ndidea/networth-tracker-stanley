@@ -682,7 +682,7 @@ with dashboard_tab:
 
 
 with data_tab:
-    st.warning(
+    st.markdown(
         "Your data is only stored for the current session. "
         "To reuse the app later, download your CSV file and upload it next time."
     )
@@ -691,10 +691,11 @@ with data_tab:
 
     if not current_snapshots.empty:
         export_df = current_snapshots.sort_values(by=["Date", "Section", "Type", "Account Name"])
+        latest_snapshot_date_for_file = export_df["Date"].max().date().isoformat()
         st.download_button(
             "Download net worth CSV",
             data=export_df.to_csv(index=False),
-            file_name="networth_data.csv",
+            file_name=f"networth_data_{latest_snapshot_date_for_file}.csv",
             mime="text/csv",
         )
 
