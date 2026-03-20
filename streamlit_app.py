@@ -64,9 +64,25 @@ def snapshots_df():
     if st.session_state.snapshots:
         df = pd.DataFrame(st.session_state.snapshots)
         df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-        df = df.dropna(subset=["Date"])
+        df["Amount"] = pd.to_numeric(df["Amount"], errors="coerce")
+        df = df.dropna(subset=["Date", "Amount"])
         return df
     return pd.DataFrame(columns=["Date", "Account Name", "Section", "Type", "Amount"])
+
+
+
+def rebuild_accounts_from_snapshots():
+    df = snapshots_df()
+    if not df.empty:
+        st.session_state.accounts = (
+            df[["Account Name", "Section", "Type"]]
+            .dropna()
+            .drop_duplicates()
+            .sort_values(by=["Section", "Type", "Account Name"])
+            .to_dict("records")
+        )
+    else:
+        st.session_state.accounts = []
 
 
 
@@ -90,10 +106,10 @@ Enter a full snapshot for a selected date by updating all tracked accounts. Use 
 Review your latest assets, liabilities, net worth, and the net worth trend over time.
 
 **Download/Upload**  
-Download your accounts and snapshots as CSV files, or upload saved CSV files to resume from a previous session.
+Download your net worth data as one CSV file, or upload that saved CSV file to resume from a previous session.
 
 **Important**  
-This app does not store data permanently. To continue using your data later, download your CSV files before closing or refreshing the app.
+This app does not store data permanently. To continue using your data later, download your CSV file before closing or refreshing the app.
 """)
 
 
@@ -173,15 +189,12 @@ with accounts_tab:
             editable_accounts,
             use_container_width=True,
             hide_index=True,
-            disabled=["Section"],
+            disabled=["Section", "Account Name", "Type"],
             column_config={
                 "Edit": st.column_config.CheckboxColumn("Edit", help="Select one account to edit below"),
                 "Account Name": st.column_config.TextColumn("Account Name"),
                 "Section": st.column_config.TextColumn("Section"),
-                "Type": st.column_config.SelectboxColumn(
-                    "Type",
-                    options=sorted(set(st.session_state.asset_types + st.session_state.liability_types)),
-                ),
+                "Type": st.column_config.TextColumn("Type"),
             },
             key="accounts_editor",
         )
@@ -189,26 +202,23 @@ with accounts_tab:
         selected_rows = edited_accounts[edited_accounts["Edit"] == True]
 
         if len(selected_rows) == 1:
-            selected_row = selected_rows.iloc[0]
-            original_row = current_accounts[
-                (current_accounts["Account Name"] == selected_row["Account Name"]) |
-                (current_accounts["Account Name"] == editable_accounts.loc[selected_rows.index[0], "Account Name"])
-            ]
-            original_name = editable_accounts.loc[selected_rows.index[0], "Account Name"]
-            original_section = editable_accounts.loc[selected_rows.index[0], "Section"]
+            selected_index = selected_rows.index[0]
+            original_name = editable_accounts.loc[selected_index, "Account Name"]
+            original_section = editable_accounts.loc[selected_index, "Section"]
+            original_type = editable_accounts.loc[selected_index, "Type"]
             valid_types = st.session_state.asset_types if original_section == "Asset" else st.session_state.liability_types
+            type_index = valid_types.index(original_type) if original_type in valid_types else 0
 
             st.markdown("### Edit Selected Account")
             with st.form("edit_account_form"):
                 edit_col1, edit_col2 = st.columns(2)
                 with edit_col1:
-                    edited_account_name = st.text_input("Account name", value=selected_row["Account Name"])
+                    edited_account_name = st.text_input("Account name", value=original_name)
                 with edit_col2:
-                    default_type = selected_row["Type"] if selected_row["Type"] in valid_types else valid_types[0]
                     edited_account_type = st.selectbox(
                         "Type",
                         valid_types,
-                        index=valid_types.index(default_type),
+                        index=type_index,
                         key="edit_account_type_select",
                     )
 
@@ -224,15 +234,14 @@ with accounts_tab:
                         st.error("That account name already exists.")
                     else:
                         for account in st.session_state.accounts:
-                            if account["Account Name"] == original_name:
+                            if account["Account Name"] == original_name and account["Section"] == original_section:
                                 account["Account Name"] = edited_account_name.strip()
                                 account["Type"] = edited_account_type
 
                         for snapshot in st.session_state.snapshots:
-                            if snapshot["Account Name"] == original_name:
+                            if snapshot["Account Name"] == original_name and snapshot["Section"] == original_section:
                                 snapshot["Account Name"] = edited_account_name.strip()
                                 snapshot["Type"] = edited_account_type
-                                snapshot["Section"] = original_section
 
                         st.success("Account updated.")
                         st.rerun()
@@ -255,9 +264,12 @@ with update_tab:
             latest_previous = (
                 previous_snapshots
                 .sort_values(by=["Date"])
-                .drop_duplicates(subset=["Account Name"], keep="last")
+                .drop_duplicates(subset=["Account Name", "Section"], keep="last")
             )
-            previous_by_account = latest_previous.set_index("Account Name")["Amount"].to_dict()
+            previous_by_account = {
+                (row["Account Name"], row["Section"]): row["Amount"]
+                for _, row in latest_previous.iterrows()
+            }
         else:
             existing_for_date = pd.DataFrame()
             previous_by_account = {}
@@ -268,24 +280,25 @@ with update_tab:
 
             for _, row in current_accounts.sort_values(by=["Section", "Type", "Account Name"]).iterrows():
                 account = row["Account Name"]
+                section = row["Section"]
                 prefill = 0.0
 
-                if not existing_for_date.empty and account in existing_for_date["Account Name"].values:
+                if not existing_for_date.empty and ((existing_for_date["Account Name"] == account) & (existing_for_date["Section"] == section)).any():
                     prefill = float(
                         existing_for_date.loc[
-                            existing_for_date["Account Name"] == account,
+                            (existing_for_date["Account Name"] == account) & (existing_for_date["Section"] == section),
                             "Amount",
                         ].iloc[0]
                     )
-                elif account in previous_by_account:
-                    prefill = float(previous_by_account[account])
+                elif (account, section) in previous_by_account:
+                    prefill = float(previous_by_account[(account, section)])
 
                 cols = st.columns([2, 1])
                 cols[0].markdown(f"**{account}**  \n{row['Section']} | {row['Type']}")
                 amount_text = cols[1].text_input(
-                    f"Amount for {account}",
+                    f"Amount for {account} {section}",
                     value=f"{prefill:,.2f}",
-                    key=f"amount_{snapshot_date}_{account}",
+                    key=f"amount_{snapshot_date}_{section}_{account}",
                     label_visibility="collapsed",
                     help="You can type large values with commas, like 125,000.50",
                 )
@@ -381,79 +394,51 @@ with dashboard_tab:
 with data_tab:
     st.warning(
         "Your data is only stored for the current session. "
-        "To reuse the app later, download both CSV files and upload them next time."
+        "To reuse the app later, download your CSV file and upload it next time."
     )
 
-    current_accounts = accounts_df()
     current_snapshots = snapshots_df()
 
-    export_col1, export_col2 = st.columns(2)
-    with export_col1:
-        if not current_accounts.empty:
-            st.download_button(
-                "Download accounts CSV",
-                data=current_accounts.to_csv(index=False),
-                file_name="accounts.csv",
-                mime="text/csv",
-            )
-    with export_col2:
-        if not current_snapshots.empty:
-            st.download_button(
-                "Download snapshots CSV",
-                data=current_snapshots.to_csv(index=False),
-                file_name="snapshots.csv",
-                mime="text/csv",
-            )
+    if not current_snapshots.empty:
+        export_df = current_snapshots.sort_values(by=["Date", "Section", "Type", "Account Name"])
+        st.download_button(
+            "Download net worth CSV",
+            data=export_df.to_csv(index=False),
+            file_name="networth_data.csv",
+            mime="text/csv",
+        )
 
     st.markdown("### Upload saved data")
-    uploaded_accounts = st.file_uploader("Upload accounts CSV", type=["csv"], key="upload_accounts")
-    uploaded_snapshots = st.file_uploader("Upload snapshots CSV", type=["csv"], key="upload_snapshots")
+    uploaded_data = st.file_uploader("Upload net worth CSV", type=["csv"], key="upload_networth_data")
 
     if st.button("Load uploaded data"):
-        loaded_any = False
-
-        if uploaded_accounts is not None:
+        if uploaded_data is not None:
             try:
-                df_accounts = pd.read_csv(uploaded_accounts)
-                required_account_cols = {"Account Name", "Section", "Type"}
-                if required_account_cols.issubset(df_accounts.columns):
-                    df_accounts = df_accounts[["Account Name", "Section", "Type"]].fillna("")
-                    st.session_state.accounts = df_accounts.to_dict("records")
-                    loaded_any = True
-                else:
-                    st.error("Accounts CSV is missing required columns: Account Name, Section, Type")
-            except Exception as e:
-                st.error(f"Could not load accounts CSV: {e}")
+                df = pd.read_csv(uploaded_data)
+                required_cols = {"Date", "Account Name", "Section", "Type", "Amount"}
+                if required_cols.issubset(df.columns):
+                    df = df[["Date", "Account Name", "Section", "Type", "Amount"]].copy()
+                    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+                    df["Amount"] = pd.to_numeric(df["Amount"], errors="coerce")
+                    df = df.dropna(subset=["Date", "Account Name", "Section", "Type", "Amount"])
+                    df["Account Name"] = df["Account Name"].astype(str).str.strip()
+                    df["Section"] = df["Section"].astype(str).str.strip()
+                    df["Type"] = df["Type"].astype(str).str.strip()
 
-        if uploaded_snapshots is not None:
-            try:
-                df_snapshots = pd.read_csv(uploaded_snapshots)
-                required_snapshot_cols = {"Date", "Account Name", "Section", "Type", "Amount"}
-                if required_snapshot_cols.issubset(df_snapshots.columns):
-                    df_snapshots = df_snapshots[
-                        ["Date", "Account Name", "Section", "Type", "Amount"]
-                    ].copy()
-                    df_snapshots["Date"] = pd.to_datetime(df_snapshots["Date"], errors="coerce")
-                    df_snapshots["Amount"] = pd.to_numeric(df_snapshots["Amount"], errors="coerce")
-                    df_snapshots = df_snapshots.dropna(subset=["Date", "Amount"])
-                    df_snapshots = df_snapshots.fillna("")
-                    st.session_state.snapshots = df_snapshots.to_dict("records")
-                    loaded_any = True
+                    st.session_state.snapshots = df.to_dict("records")
+                    rebuild_accounts_from_snapshots()
+                    st.success("Uploaded data loaded into this session.")
+                    st.rerun()
                 else:
-                    st.error(
-                        "Snapshots CSV is missing required columns: "
-                        "Date, Account Name, Section, Type, Amount"
-                    )
+                    st.error("CSV is missing required columns: Date, Account Name, Section, Type, Amount")
             except Exception as e:
-                st.error(f"Could not load snapshots CSV: {e}")
-
-        if loaded_any:
-            st.success("Uploaded data loaded into this session.")
-            st.rerun()
+                st.error(f"Could not load CSV: {e}")
+        else:
+            st.error("Please upload a CSV file first.")
 
 
 st.divider()
 st.caption(
     "Prototype version with reusable accounts, full-date snapshots, dashboard trend chart, "
-    "and CSV import/export. Data is not stored permanently unless you download your CSV files."
+    "and single-file CSV import/export. Data is not stored permanently unless you download your CSV file."
 )
