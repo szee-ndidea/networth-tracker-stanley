@@ -640,16 +640,6 @@ with dashboard_tab:
                             / latest_net_worth
                         ) if years_to_goal > 0 else 0.0
 
-                        comparison_col1, comparison_col2 = st.columns(2)
-                        comparison_col1.metric(
-                            "Average Yearly Increase So Far",
-                            format_percent(historical_yearly_rate),
-                        )
-                        comparison_col2.metric(
-                            "Required Yearly Increase",
-                            format_percent(required_yearly_rate),
-                        )
-
                         lower_close_pace_threshold = 0.95
                         upper_close_pace_threshold = 1.05
 
