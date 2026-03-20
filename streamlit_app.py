@@ -115,49 +115,6 @@ def build_timeline(df):
     return timeline
 
 
-
-def build_projection_df(timeline, years_forward):
-    base = timeline[["Snapshot_Date", "Net Worth"]].copy().sort_values(by="Snapshot_Date")
-    base = base.drop_duplicates(subset=["Snapshot_Date"], keep="last")
-
-    if len(base) < 2:
-        return None, None, None
-
-    start_date = base["Snapshot_Date"].min()
-    end_date = base["Snapshot_Date"].max()
-    days_elapsed = (end_date - start_date).days
-
-    if days_elapsed <= 0:
-        return None, None, None
-
-    start_value = float(base.iloc[0]["Net Worth"])
-    end_value = float(base.iloc[-1]["Net Worth"])
-    daily_change = (end_value - start_value) / days_elapsed
-    annual_change = daily_change * 365.25
-
-    future_dates = pd.date_range(
-        start=end_date,
-        periods=(years_forward * 12) + 1,
-        freq="MS",
-    )
-
-    projection_rows = []
-    for projection_date in future_dates:
-        days_from_end = (projection_date - end_date).days
-        projected_value = end_value + (daily_change * days_from_end)
-        projection_rows.append(
-            {
-                "Date": projection_date,
-                "Projected Net Worth": projected_value,
-            }
-        )
-
-    projection_df = pd.DataFrame(projection_rows)
-    historical_df = base.rename(columns={"Snapshot_Date": "Date", "Net Worth": "Historical Net Worth"})
-
-    return historical_df, projection_df, annual_change
-
-
 with st.sidebar:
     st.header("How to use this app")
     st.markdown("""
@@ -168,7 +125,7 @@ Create the accounts you want to track over time. Add asset accounts at the top a
 Enter a full snapshot for a selected date by updating all tracked accounts. Use positive numbers for everything. Do not enter liabilities as negative values.
 
 **Dashboard**  
-Review your latest assets, liabilities, net worth, current trend, and a projection based on your existing data.
+Review your latest assets, liabilities, net worth, current trend, and goal planning metrics.
 
 **Download/Upload**  
 Download your net worth data as one CSV file, or upload that saved CSV file to resume from a previous session.
@@ -423,41 +380,36 @@ with dashboard_tab:
         chart_df = timeline[["Snapshot_Date", "Net Worth"]].set_index("Snapshot_Date")
         st.line_chart(chart_df)
 
-        st.markdown("### Goal Setting and Projection")
-        projection_years = st.selectbox("Projection horizon", [10, 20, 30], index=0)
-        goal_net_worth = st.number_input("Goal net worth", min_value=0.0, step=10000.0, format="%.2f")
+        st.markdown("### Goal Planning")
+        today_date = date.today()
+        goal_col1, goal_col2 = st.columns(2)
+        with goal_col1:
+            st.metric("Net Worth Today", f"${latest_net_worth:,.2f}")
+            st.caption(f"Using latest snapshot from {latest_date.strftime('%B %d, %Y')} as of today, {today_date.strftime('%B %d, %Y')}.")
+        with goal_col2:
+            goal_net_worth = st.number_input("Goal net worth", min_value=0.0, step=10000.0, format="%.2f")
+            goal_end_date = st.date_input("Goal end date", value=today_date.replace(year=today_date.year + 10), min_value=today_date)
 
-        historical_df, projection_df, annual_change = build_projection_df(timeline, projection_years)
-
-        if historical_df is None or projection_df is None:
-            st.info("Add at least two dated snapshots to see a projection.")
+        days_to_goal = (goal_end_date - today_date).days
+        if days_to_goal <= 0:
+            st.error("Choose a goal end date after today.")
+        elif goal_net_worth <= 0:
+            st.info("Enter a goal net worth and end date to calculate the required yearly increase.")
         else:
-            combined_projection = historical_df.merge(projection_df, on="Date", how="outer").sort_values(by="Date")
-            combined_projection = combined_projection.set_index("Date")
-            st.line_chart(combined_projection)
+            total_increase_needed = goal_net_worth - latest_net_worth
+            years_to_goal = days_to_goal / 365.25
+            yearly_increase_needed = total_increase_needed / years_to_goal if years_to_goal > 0 else 0.0
+            monthly_increase_needed = yearly_increase_needed / 12
 
-            projected_end_value = float(projection_df.iloc[-1]["Projected Net Worth"])
-            change_direction = "increasing" if annual_change > 0 else "decreasing" if annual_change < 0 else "flat"
+            goal_metric_1, goal_metric_2, goal_metric_3 = st.columns(3)
+            goal_metric_1.metric("Years to goal", f"{years_to_goal:,.1f}")
+            goal_metric_2.metric("Increase needed per year", f"${yearly_increase_needed:,.2f}")
+            goal_metric_3.metric("Increase needed per month", f"${monthly_increase_needed:,.2f}")
 
-            insight_col1, insight_col2, insight_col3 = st.columns(3)
-            insight_col1.metric("Estimated yearly change", f"${annual_change:,.2f}")
-            insight_col2.metric(f"Projected net worth in {projection_years} years", f"${projected_end_value:,.2f}")
-            insight_col3.metric("Trend direction", change_direction.title())
-
-            if goal_net_worth > 0:
-                goal_hit = projection_df[projection_df["Projected Net Worth"] >= goal_net_worth]
-                if not goal_hit.empty:
-                    goal_date = goal_hit.iloc[0]["Date"]
-                    st.success(f"At the current trend, you may reach your goal around {goal_date.strftime('%B %Y')}.")
-                else:
-                    st.info("At the current trend, this goal is not reached within the selected projection horizon.")
-
-            if annual_change > 0:
-                st.caption("Projection is based on the average historical net worth trend in your saved data and assumes that trend continues in a straight line.")
-            elif annual_change < 0:
-                st.caption("Projection shows a declining trend based on your saved data. This is a straight-line estimate, not a forecast of actual returns or payments.")
+            if total_increase_needed <= 0:
+                st.success("You are already at or above this goal based on your latest snapshot.")
             else:
-                st.caption("Projection is flat because your saved history does not currently show a net upward or downward trend.")
+                st.info(f"To grow from ${latest_net_worth:,.2f} to ${goal_net_worth:,.2f} by {goal_end_date.strftime('%B %d, %Y')}, you would need an average net worth increase of ${yearly_increase_needed:,.2f} per year.")
 
 
 with data_tab:
@@ -509,5 +461,5 @@ with data_tab:
 st.divider()
 st.caption(
     "Prototype version with reusable accounts, full-date snapshots, dashboard trend chart, "
-    "and single-file CSV import/export. Data is not stored permanently unless you download your CSV file."
+    "goal planning, and single-file CSV import/export. Data is not stored permanently unless you download your CSV file."
 )
