@@ -96,12 +96,12 @@ def format_currency(value):
     return f"${value:,.2f}"
 
 
-def format_currency_rounded(value):
-    return f"${round(value):,}"
-
-
 def format_ratio(value):
     return f"{value:,.2f}x"
+
+
+def format_percent(value):
+    return f"{value * 100:,.1f}%"
 
 
 def build_timeline(df):
@@ -560,48 +560,55 @@ with dashboard_tab:
                     history_days = (last_row["Snapshot_Date"] - first_row["Snapshot_Date"]).days
                     history_years = history_days / 365.25 if history_days > 0 else 0
 
-                    if history_years > 0:
-                        historical_yearly_increase = (
-                            last_row["Net Worth"] - first_row["Net Worth"]
-                        ) / history_years
+                    if history_years > 0 and first_row["Net Worth"] > 0 and last_row["Net Worth"] > 0 and latest_net_worth > 0:
+                        historical_yearly_rate = (
+                            (last_row["Net Worth"] / first_row["Net Worth"]) ** (1 / history_years)
+                        ) - 1
+
+                        required_yearly_rate = (
+                            (goal_net_worth / latest_net_worth) ** (1 / years_to_goal)
+                        ) - 1 if years_to_goal > 0 else 0.0
 
                         comparison_col1, comparison_col2 = st.columns(2)
                         comparison_col1.metric(
                             "Average Yearly Increase So Far",
-                            format_currency(historical_yearly_increase),
+                            format_percent(historical_yearly_rate),
                         )
                         comparison_col2.metric(
                             "Required Yearly Increase",
-                            format_currency(yearly_increase_needed),
+                            format_percent(required_yearly_rate),
                         )
+
+                        lower_close_pace_threshold = 0.95
+                        upper_close_pace_threshold = 1.05
 
                         pace_ratio = (
-                            historical_yearly_increase / yearly_increase_needed
-                            if yearly_increase_needed > 0 else 0.0
+                            historical_yearly_rate / required_yearly_rate
+                            if required_yearly_rate > 0 else 0.0
                         )
 
-                        avg_text = format_currency_rounded(historical_yearly_increase)
-                        req_text = format_currency_rounded(yearly_increase_needed)
+                        hist_text = format_percent(historical_yearly_rate)
+                        req_text = format_percent(required_yearly_rate)
 
-                        if pace_ratio >= 1.0:
+                        if required_yearly_rate <= 0:
+                            st.success("Your goal is already achieved or does not require additional growth.")
+                        elif pace_ratio > upper_close_pace_threshold:
                             st.success(
-                                f"Your average yearly increase of approximately {avg_text} is on pace to reach this goal. "
-                                f"That is at or above the required pace of about {req_text} per year."
+                                f"Your average yearly increase of approximately {hist_text} is on pace to achieve your goal. "
+                                f"That is above the required pace of about {req_text} per year."
                             )
-                        elif pace_ratio >= 0.9:
-                            gap_to_required = yearly_increase_needed - historical_yearly_increase
+                        elif lower_close_pace_threshold <= pace_ratio <= upper_close_pace_threshold:
                             st.warning(
-                                f"Your average yearly increase of approximately {avg_text} is close to the pace needed for this goal. "
-                                f"You need about {req_text} per year, so this is within a narrow margin of roughly {format_currency_rounded(gap_to_required)} per year."
+                                f"Your average yearly increase of approximately {hist_text} is close to the pace needed to achieve your goal. "
+                                f"You need about {req_text} per year, so this could be close."
                             )
                         else:
-                            gap_to_required = yearly_increase_needed - historical_yearly_increase
                             st.error(
-                                f"Your average yearly increase of approximately {avg_text} is below the pace needed for this goal. "
-                                f"You need about {req_text} per year, which is roughly {format_currency_rounded(gap_to_required)} more per year than your historical average."
+                                f"Your average yearly increase of approximately {hist_text} is below the pace needed to achieve your goal. "
+                                f"You need about {req_text} per year to stay on track."
                             )
                     else:
-                        st.info("Add snapshots across more than one date to compare your historical yearly increase to your goal pace.")
+                        st.info("Average yearly percentage increase requires positive net worth values across your history and for your current snapshot.")
                 else:
                     st.info("Add at least two snapshots on different dates to compare your historical yearly increase to your goal pace.")
 
