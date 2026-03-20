@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import altair as alt
 from datetime import date
 
 st.set_page_config(page_title="Net Worth Tracker", page_icon="💰", layout="wide")
@@ -90,6 +91,14 @@ def parse_amount(value):
     return float(cleaned)
 
 
+def format_currency(value):
+    return f"${value:,.2f}"
+
+
+def format_ratio(value):
+    return f"{value:,.2f}x"
+
+
 def build_timeline(df):
     timeline = (
         df.assign(Snapshot_Date=df["Date"].dt.date)
@@ -109,6 +118,57 @@ def build_timeline(df):
     timeline["Snapshot_Date"] = pd.to_datetime(timeline["Snapshot_Date"])
     timeline = timeline.sort_values(by="Snapshot_Date")
     return timeline
+
+
+def build_liquidity_history(df, liquid_asset_types, short_term_liability_types):
+    grouped = (
+        df.assign(Snapshot_Date=df["Date"].dt.date)
+        .groupby(["Snapshot_Date", "Section", "Type"], as_index=False)["Amount"]
+        .sum()
+    )
+
+    liquid_assets = (
+        grouped[
+            (grouped["Section"] == "Asset")
+            & (grouped["Type"].isin(liquid_asset_types))
+        ]
+        .groupby("Snapshot_Date", as_index=False)["Amount"]
+        .sum()
+        .rename(columns={"Amount": "Liquid Assets"})
+    )
+
+    short_term_liabilities = (
+        grouped[
+            (grouped["Section"] == "Liability")
+            & (grouped["Type"].isin(short_term_liability_types))
+        ]
+        .groupby("Snapshot_Date", as_index=False)["Amount"]
+        .sum()
+        .rename(columns={"Amount": "Short Term Liabilities"})
+    )
+
+    total_liabilities = (
+        grouped[grouped["Section"] == "Liability"]
+        .groupby("Snapshot_Date", as_index=False)["Amount"]
+        .sum()
+        .rename(columns={"Amount": "Total Liabilities"})
+    )
+
+    history = liquid_assets.merge(short_term_liabilities, on="Snapshot_Date", how="outer")
+    history = history.merge(total_liabilities, on="Snapshot_Date", how="outer").fillna(0)
+    history["Snapshot_Date"] = pd.to_datetime(history["Snapshot_Date"])
+    history = history.sort_values("Snapshot_Date")
+    return history
+
+
+def coverage_label(value):
+    if value >= 1.0:
+        return "Covered"
+    if value >= 0.75:
+        return "Close"
+    if value > 0:
+        return "Partial"
+    return "None"
 
 
 with st.sidebar:
@@ -375,16 +435,28 @@ with dashboard_tab:
         latest_liabilities = float(latest_df[latest_df["Section"] == "Liability"]["Amount"].sum())
         latest_net_worth = latest_assets - latest_liabilities
 
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Assets", f"${latest_assets:,.2f}")
-        col2.metric("Liabilities", f"${latest_liabilities:,.2f}")
-        col3.metric("Net Worth", f"${latest_net_worth:,.2f}")
+        top_col1, top_col2, top_col3 = st.columns(3)
+        top_col1.metric("Assets", format_currency(latest_assets))
+        top_col2.metric("Liabilities", format_currency(latest_liabilities))
+        top_col3.metric("Net Worth", format_currency(latest_net_worth))
 
         timeline = build_timeline(df)
 
         st.markdown("### Net Worth Over Time")
-        chart_df = timeline[["Snapshot_Date", "Net Worth"]].set_index("Snapshot_Date")
-        st.line_chart(chart_df)
+        net_worth_chart = (
+            alt.Chart(timeline)
+            .mark_line(point=True)
+            .encode(
+                x=alt.X("Snapshot_Date:T", title="Date"),
+                y=alt.Y("Net Worth:Q", title="Net Worth"),
+                tooltip=[
+                    alt.Tooltip("Snapshot_Date:T", title="Date"),
+                    alt.Tooltip("Net Worth:Q", title="Net Worth", format=",.2f"),
+                ],
+            )
+            .properties(height=300)
+        )
+        st.altair_chart(net_worth_chart, use_container_width=True)
 
         st.markdown("### Liabilities")
 
@@ -414,8 +486,8 @@ with dashboard_tab:
 
         liquid_assets = float(
             latest_df[
-                (latest_df["Section"] == "Asset") &
-                (latest_df["Type"].isin(liquid_asset_types))
+                (latest_df["Section"] == "Asset")
+                & (latest_df["Type"].isin(liquid_asset_types))
             ]["Amount"].sum()
         )
 
@@ -425,15 +497,15 @@ with dashboard_tab:
 
         short_term_liabilities = float(
             latest_df[
-                (latest_df["Section"] == "Liability") &
-                (latest_df["Type"].isin(short_term_liability_types))
+                (latest_df["Section"] == "Liability")
+                & (latest_df["Type"].isin(short_term_liability_types))
             ]["Amount"].sum()
         )
 
         long_term_liabilities = float(
             latest_df[
-                (latest_df["Section"] == "Liability") &
-                (latest_df["Type"].isin(long_term_liability_types))
+                (latest_df["Section"] == "Liability")
+                & (latest_df["Type"].isin(long_term_liability_types))
             ]["Amount"].sum()
         )
 
@@ -446,48 +518,135 @@ with dashboard_tab:
         liquidity_to_short = liquid_assets / short_term_liabilities if short_term_liabilities > 0 else 0.0
 
         liab_col1, liab_col2, liab_col3, liab_col4 = st.columns(4)
-        liab_col1.metric("Total Liabilities", f"${total_liabilities:,.2f}")
-        liab_col2.metric("Short Term", f"${short_term_liabilities:,.2f}")
-        liab_col3.metric("Long Term", f"${long_term_liabilities:,.2f}")
-        liab_col4.metric("Liquid Assets", f"${liquid_assets:,.2f}")
+        liab_col1.metric("Liquid Assets", format_currency(liquid_assets))
+        liab_col2.metric("Total Liabilities", format_currency(total_liabilities))
+        liab_col3.metric("Short Term Liabilities", format_currency(short_term_liabilities))
+        liab_col4.metric("Long Term Liabilities", format_currency(long_term_liabilities))
 
         ratio_col1, ratio_col2 = st.columns(2)
-        ratio_col1.metric("Liquidity to Total Liabilities", f"{liquidity_to_total:,.2f}")
-        ratio_col2.metric("Liquidity to Short Term Liabilities", f"{liquidity_to_short:,.2f}")
+        ratio_col1.metric("Liquidity to Total Liabilities", format_ratio(liquidity_to_total))
+        ratio_col2.metric("Liquidity to Short Term Liabilities", format_ratio(liquidity_to_short))
 
-        st.markdown("#### Liability Breakdown")
-        liability_breakdown_df = pd.DataFrame(
-            {
-                "Amount": [
-                    short_term_liabilities,
-                    long_term_liabilities,
-                    other_liabilities,
-                ]
-            },
-            index=[
-                "Short Term Liabilities",
-                "Long Term Liabilities",
-                "Other Liabilities",
-            ],
-        )
-        st.bar_chart(liability_breakdown_df)
+        summary_col1, summary_col2 = st.columns(2)
+        with summary_col1:
+            if total_liabilities > 0:
+                total_coverage_pct = min(liquidity_to_total, 1.0)
+                st.caption(f"Coverage of total liabilities: {total_coverage_pct:.0%} ({coverage_label(liquidity_to_total)})")
+                st.progress(total_coverage_pct)
+            else:
+                st.caption("Coverage of total liabilities: No liabilities")
+                st.progress(1.0)
 
-        st.markdown("#### Liquid Assets vs Liabilities")
-        coverage_df = pd.DataFrame(
-            {
-                "Amount": [
-                    liquid_assets,
-                    short_term_liabilities,
-                    total_liabilities,
-                ]
-            },
-            index=[
-                "Liquid Assets",
-                "Short Term Liabilities",
-                "Total Liabilities",
-            ],
+        with summary_col2:
+            if short_term_liabilities > 0:
+                short_coverage_pct = min(liquidity_to_short, 1.0)
+                st.caption(f"Coverage of short term liabilities: {short_coverage_pct:.0%} ({coverage_label(liquidity_to_short)})")
+                st.progress(short_coverage_pct)
+            else:
+                st.caption("Coverage of short term liabilities: No short term liabilities")
+                st.progress(1.0)
+
+        chart_col1, chart_col2 = st.columns(2)
+
+        with chart_col1:
+            st.markdown("#### Liability Mix")
+            liability_mix_df = pd.DataFrame(
+                {
+                    "Category": [
+                        "Short Term",
+                        "Long Term",
+                        "Other",
+                    ],
+                    "Amount": [
+                        short_term_liabilities,
+                        long_term_liabilities,
+                        other_liabilities,
+                    ],
+                }
+            )
+
+            liability_mix_chart = (
+                alt.Chart(liability_mix_df)
+                .mark_bar()
+                .encode(
+                    x=alt.X("Amount:Q", title="Amount"),
+                    y=alt.Y("Category:N", sort=["Short Term", "Long Term", "Other"], title=""),
+                    tooltip=[
+                        alt.Tooltip("Category:N"),
+                        alt.Tooltip("Amount:Q", format=",.2f"),
+                    ],
+                )
+                .properties(height=220)
+            )
+            st.altair_chart(liability_mix_chart, use_container_width=True)
+
+        with chart_col2:
+            st.markdown("#### Liquidity Coverage")
+            coverage_df = pd.DataFrame(
+                {
+                    "Category": [
+                        "Liquid Assets",
+                        "Short Term Liabilities",
+                        "Total Liabilities",
+                    ],
+                    "Amount": [
+                        liquid_assets,
+                        short_term_liabilities,
+                        total_liabilities,
+                    ],
+                }
+            )
+
+            coverage_chart = (
+                alt.Chart(coverage_df)
+                .mark_bar()
+                .encode(
+                    x=alt.X("Amount:Q", title="Amount"),
+                    y=alt.Y(
+                        "Category:N",
+                        sort=["Liquid Assets", "Short Term Liabilities", "Total Liabilities"],
+                        title="",
+                    ),
+                    tooltip=[
+                        alt.Tooltip("Category:N"),
+                        alt.Tooltip("Amount:Q", format=",.2f"),
+                    ],
+                )
+                .properties(height=220)
+            )
+            st.altair_chart(coverage_chart, use_container_width=True)
+
+        liquidity_history = build_liquidity_history(
+            df,
+            liquid_asset_types=liquid_asset_types,
+            short_term_liability_types=short_term_liability_types,
         )
-        st.bar_chart(coverage_df)
+
+        if len(liquidity_history) > 1:
+            st.markdown("#### Liquidity vs Liabilities Over Time")
+            history_long = liquidity_history.melt(
+                id_vars="Snapshot_Date",
+                value_vars=["Liquid Assets", "Short Term Liabilities", "Total Liabilities"],
+                var_name="Series",
+                value_name="Amount",
+            )
+
+            history_chart = (
+                alt.Chart(history_long)
+                .mark_line(point=True)
+                .encode(
+                    x=alt.X("Snapshot_Date:T", title="Date"),
+                    y=alt.Y("Amount:Q", title="Amount"),
+                    color=alt.Color("Series:N", title=""),
+                    tooltip=[
+                        alt.Tooltip("Snapshot_Date:T", title="Date"),
+                        alt.Tooltip("Series:N", title="Series"),
+                        alt.Tooltip("Amount:Q", title="Amount", format=",.2f"),
+                    ],
+                )
+                .properties(height=300)
+            )
+            st.altair_chart(history_chart, use_container_width=True)
 
         st.markdown("### Goal Planning")
         today_date = date.today()
@@ -507,6 +666,7 @@ with dashboard_tab:
             goal_net_worth = None
 
         days_to_goal = (goal_date - today_date).days
+
         if goal_net_worth is None:
             st.error("Enter a valid goal net worth. You can use commas like 1,500,000.")
         elif goal_net_worth <= 0:
@@ -521,11 +681,42 @@ with dashboard_tab:
 
             goal_metric_1, goal_metric_2, goal_metric_3 = st.columns(3)
             goal_metric_1.metric("Years to goal", f"{years_to_goal:,.1f}")
-            goal_metric_2.metric("Increase needed per year", f"${yearly_increase_needed:,.2f}")
-            goal_metric_3.metric("Increase needed per month", f"${monthly_increase_needed:,.2f}")
+            goal_metric_2.metric("Increase needed per year", format_currency(yearly_increase_needed))
+            goal_metric_3.metric("Increase needed per month", format_currency(monthly_increase_needed))
 
             if total_increase_needed <= 0:
                 st.success("You are already at or above this goal based on your latest snapshot.")
+            else:
+                progress_ratio = latest_net_worth / goal_net_worth if goal_net_worth > 0 else 0.0
+                progress_ratio = max(0.0, min(progress_ratio, 1.0))
+
+                st.caption(
+                    f"Current progress toward goal: {progress_ratio:.0%} "
+                    f"({format_currency(latest_net_worth)} of {format_currency(goal_net_worth)})"
+                )
+                st.progress(progress_ratio)
+
+                goal_progress_df = pd.DataFrame(
+                    {
+                        "Category": ["Current Net Worth", "Remaining to Goal"],
+                        "Amount": [max(latest_net_worth, 0.0), max(goal_net_worth - max(latest_net_worth, 0.0), 0.0)],
+                    }
+                )
+
+                goal_progress_chart = (
+                    alt.Chart(goal_progress_df)
+                    .mark_bar()
+                    .encode(
+                        x=alt.X("Amount:Q", title="Amount"),
+                        y=alt.Y("Category:N", sort=["Current Net Worth", "Remaining to Goal"], title=""),
+                        tooltip=[
+                            alt.Tooltip("Category:N"),
+                            alt.Tooltip("Amount:Q", format=",.2f"),
+                        ],
+                    )
+                    .properties(height=160)
+                )
+                st.altair_chart(goal_progress_chart, use_container_width=True)
 
 
 with data_tab:
