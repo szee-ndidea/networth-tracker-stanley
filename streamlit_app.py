@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 from datetime import date
-import io
 
 st.set_page_config(page_title="Net Worth Tracker", page_icon="💰", layout="wide")
 
@@ -58,6 +57,13 @@ def snapshots_df():
     return pd.DataFrame(columns=["Date", "Account Name", "Section", "Type", "Amount", "Notes"])
 
 
+def parse_amount(value):
+    cleaned = str(value).replace(",", "").replace("$", "").strip()
+    if cleaned == "":
+        return 0.0
+    return float(cleaned)
+
+
 with st.sidebar:
     st.header("Manage Types")
 
@@ -105,11 +111,12 @@ with accounts_tab:
         col1, col2 = st.columns(2)
         with col1:
             account_name = st.text_input("Account name", placeholder="Example: Fidelity 401(k)")
-            section = st.selectbox("Section", ["Asset", "Debt"])
+            section = st.selectbox("Is this an asset or debt?", ["Asset", "Debt"])
         with col2:
+            type_options = st.session_state.asset_types if section == "Asset" else st.session_state.debt_types
             selected_type = st.selectbox(
                 "Asset or debt type",
-                st.session_state.asset_types if section == "Asset" else st.session_state.debt_types,
+                type_options,
             )
             account_notes = st.text_input("Notes", placeholder="Optional")
 
@@ -163,6 +170,7 @@ with update_tab:
 
         with st.form("snapshot_form"):
             balance_rows = []
+            parse_errors = []
             for _, row in current_accounts.sort_values(by=["Section", "Type", "Account Name"]).iterrows():
                 account = row["Account Name"]
                 prefill = 0.0
@@ -172,37 +180,45 @@ with update_tab:
                 elif account in previous_by_account:
                     prefill = float(previous_by_account[account])
 
-                cols = st.columns([2, 1, 1])
-                cols[0].write(f"**{account}**  \\n{row['Section']} | {row['Type']}")
-                amount = cols[1].number_input(
+                cols = st.columns([2, 1])
+                cols[0].markdown(f"**{account}**  
+{row['Section']} | {row['Type']}")
+                amount_text = cols[1].text_input(
                     f"Amount for {account}",
-                    min_value=0.0,
-                    value=float(prefill),
-                    step=100.0,
-                    format="%.2f",
+                    value=f"{prefill:,.2f}",
                     key=f"amount_{snapshot_date}_{account}",
                     label_visibility="collapsed",
+                    help="You can type large values with commas, like 125,000.50",
                 )
-                cols[2].write(" ")
+
+                try:
+                    parsed_amount = parse_amount(amount_text)
+                except ValueError:
+                    parsed_amount = None
+                    parse_errors.append(account)
+
                 balance_rows.append(
                     {
                         "Date": pd.to_datetime(snapshot_date),
                         "Account Name": account,
                         "Section": row["Section"],
                         "Type": row["Type"],
-                        "Amount": float(amount),
+                        "Amount": parsed_amount,
                         "Notes": row["Notes"],
                     }
                 )
 
             save_snapshot = st.form_submit_button("Save full snapshot")
             if save_snapshot:
-                st.session_state.snapshots = [
-                    s for s in st.session_state.snapshots
-                    if pd.to_datetime(s["Date"]).date() != snapshot_date
-                ]
-                st.session_state.snapshots.extend(balance_rows)
-                st.success("Snapshot saved for all accounts on that date.")
+                if parse_errors:
+                    st.error("Please fix the amount format for: " + ", ".join(parse_errors))
+                else:
+                    st.session_state.snapshots = [
+                        s for s in st.session_state.snapshots
+                        if pd.to_datetime(s["Date"]).date() != snapshot_date
+                    ]
+                    st.session_state.snapshots.extend(balance_rows)
+                    st.success("Snapshot saved for all accounts on that date.")
 
         if not existing_for_date.empty:
             st.caption("A snapshot already existed for this date. Saving will replace it.")
