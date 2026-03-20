@@ -17,6 +17,7 @@ def init_state():
             "Savings",
             "Money Market",
             "Certificate of Deposit",
+            "Bonds",
             "Brokerage",
             "Retirement",
             "HSA",
@@ -425,6 +426,7 @@ with dashboard_tab:
             "Savings",
             "Money Market",
             "Certificate of Deposit",
+            "Bonds",
         ]
 
         short_term_liability_types = [
@@ -527,48 +529,31 @@ with dashboard_tab:
             st.error("Choose a goal date after today.")
         else:
             total_increase_needed = goal_net_worth - latest_net_worth
+            remaining_to_goal = max(goal_net_worth - latest_net_worth, 0.0)
             years_to_goal = days_to_goal / 365.25
             yearly_increase_needed = total_increase_needed / years_to_goal if years_to_goal > 0 else 0.0
             monthly_increase_needed = yearly_increase_needed / 12
 
-            goal_metric_1, goal_metric_2, goal_metric_3 = st.columns(3)
-            goal_metric_1.metric("Years to goal", f"{years_to_goal:,.1f}")
-            goal_metric_2.metric("Increase needed per year", format_currency(yearly_increase_needed))
-            goal_metric_3.metric("Increase needed per month", format_currency(monthly_increase_needed))
+            progress_ratio = latest_net_worth / goal_net_worth if goal_net_worth > 0 else 0.0
+            progress_ratio = max(0.0, min(progress_ratio, 1.0))
+
+            goal_metric_1, goal_metric_2, goal_metric_3, goal_metric_4 = st.columns(4)
+            goal_metric_1.metric("Progress to Goal", f"{progress_ratio:.0%}")
+            goal_metric_2.metric("Remaining to Goal", format_currency(remaining_to_goal))
+            goal_metric_3.metric("Increase Needed per Year", format_currency(yearly_increase_needed))
+            goal_metric_4.metric("Increase Needed per Month", format_currency(monthly_increase_needed))
+
+            st.caption(
+                f"{format_currency(latest_net_worth)} current net worth vs {format_currency(goal_net_worth)} goal"
+            )
+            st.progress(progress_ratio)
 
             if total_increase_needed <= 0:
                 st.success("You are already at or above this goal based on your latest snapshot.")
             else:
-                progress_ratio = latest_net_worth / goal_net_worth if goal_net_worth > 0 else 0.0
-                progress_ratio = max(0.0, min(progress_ratio, 1.0))
-
                 st.caption(
-                    f"Current progress toward goal: {progress_ratio:.0%} "
-                    f"({format_currency(latest_net_worth)} of {format_currency(goal_net_worth)})"
+                    f"Goal gap: {format_currency(remaining_to_goal)} remaining over {years_to_goal:,.1f} years"
                 )
-                st.progress(progress_ratio)
-
-                goal_progress_df = pd.DataFrame(
-                    {
-                        "Category": ["Current Net Worth", "Remaining to Goal"],
-                        "Amount": [max(latest_net_worth, 0.0), max(goal_net_worth - max(latest_net_worth, 0.0), 0.0)],
-                    }
-                )
-
-                goal_progress_chart = (
-                    alt.Chart(goal_progress_df)
-                    .mark_bar()
-                    .encode(
-                        x=alt.X("Amount:Q", title="Amount"),
-                        y=alt.Y("Category:N", sort=["Current Net Worth", "Remaining to Goal"], title=""),
-                        tooltip=[
-                            alt.Tooltip("Category:N"),
-                            alt.Tooltip("Amount:Q", format=",.2f"),
-                        ],
-                    )
-                    .properties(height=160)
-                )
-                st.altair_chart(goal_progress_chart, use_container_width=True)
 
 
 with data_tab:
