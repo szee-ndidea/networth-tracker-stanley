@@ -543,11 +543,45 @@ with dashboard_tab:
             goal_metric_3.metric("Increase Needed per Year", format_currency(yearly_increase_needed))
             goal_metric_4.metric("Increase Needed per Month", format_currency(monthly_increase_needed))
 
-            st.caption(f"{progress_ratio:.0%}")
+            st.caption(f"Progress toward goal: {progress_ratio:.0%}")
             st.progress(progress_ratio)
 
             if total_increase_needed <= 0:
                 st.success("You are already at or above this goal based on your latest snapshot.")
+            else:
+                if len(timeline) >= 2:
+                    first_row = timeline.iloc[0]
+                    last_row = timeline.iloc[-1]
+
+                    history_days = (last_row["Snapshot_Date"] - first_row["Snapshot_Date"]).days
+                    history_years = history_days / 365.25 if history_days > 0 else 0
+
+                    if history_years > 0:
+                        historical_yearly_increase = (
+                            last_row["Net Worth"] - first_row["Net Worth"]
+                        ) / history_years
+
+                        comparison_col1, comparison_col2 = st.columns(2)
+                        comparison_col1.metric(
+                            "Average Yearly Increase So Far",
+                            format_currency(historical_yearly_increase),
+                        )
+                        comparison_col2.metric(
+                            "Required Yearly Increase",
+                            format_currency(yearly_increase_needed),
+                        )
+
+                        if historical_yearly_increase >= yearly_increase_needed:
+                            st.success("Your average yearly increase so far is on pace to reach this goal.")
+                        else:
+                            gap_to_required = yearly_increase_needed - historical_yearly_increase
+                            st.info(
+                                f"Your average yearly increase so far is {format_currency(gap_to_required)} below the pace needed for this goal."
+                            )
+                    else:
+                        st.info("Add snapshots across more than one date to compare your historical yearly increase to your goal pace.")
+                else:
+                    st.info("Add at least two snapshots on different dates to compare your historical yearly increase to your goal pace.")
 
 
 with data_tab:
