@@ -59,6 +59,7 @@ def accounts_df():
     return pd.DataFrame(columns=["Account Name", "Section", "Type"])
 
 
+
 def snapshots_df():
     if st.session_state.snapshots:
         df = pd.DataFrame(st.session_state.snapshots)
@@ -66,6 +67,7 @@ def snapshots_df():
         df = df.dropna(subset=["Date"])
         return df
     return pd.DataFrame(columns=["Date", "Account Name", "Section", "Type", "Amount"])
+
 
 
 def parse_amount(value):
@@ -106,6 +108,54 @@ accounts_tab, update_tab, dashboard_tab, data_tab = st.tabs([
 with accounts_tab:
     st.subheader("Accounts")
     st.write("Create the accounts you want to track over time. Add asset accounts at the top and liability accounts below.")
+
+    current_accounts = accounts_df()
+    if not current_accounts.empty:
+        st.markdown("### Edit Existing Account")
+        account_options = current_accounts.sort_values(by=["Account Name"])["Account Name"].tolist()
+        selected_account = st.selectbox("Select account to edit", account_options, key="edit_account_select")
+
+        selected_account_row = current_accounts[current_accounts["Account Name"] == selected_account].iloc[0]
+        selected_section = selected_account_row["Section"]
+        selected_type_list = st.session_state.asset_types if selected_section == "Asset" else st.session_state.liability_types
+        selected_type_index = selected_type_list.index(selected_account_row["Type"]) if selected_account_row["Type"] in selected_type_list else 0
+
+        with st.form("edit_account_form"):
+            edit_col1, edit_col2 = st.columns(2)
+            with edit_col1:
+                edited_account_name = st.text_input("Account name", value=selected_account_row["Account Name"])
+            with edit_col2:
+                edited_account_type = st.selectbox(
+                    "Type",
+                    selected_type_list,
+                    index=selected_type_index,
+                    key="edit_account_type_select",
+                )
+
+            save_account_changes = st.form_submit_button("Save account changes")
+            if save_account_changes:
+                existing_names = {a["Account Name"].strip().lower() for a in st.session_state.accounts}
+                old_name_lower = selected_account.strip().lower()
+                new_name_lower = edited_account_name.strip().lower()
+
+                if not edited_account_name.strip():
+                    st.error("Please enter an account name.")
+                elif new_name_lower != old_name_lower and new_name_lower in existing_names:
+                    st.error("That account name already exists.")
+                else:
+                    for account in st.session_state.accounts:
+                        if account["Account Name"] == selected_account:
+                            account["Account Name"] = edited_account_name.strip()
+                            account["Type"] = edited_account_type
+
+                    for snapshot in st.session_state.snapshots:
+                        if snapshot["Account Name"] == selected_account:
+                            snapshot["Account Name"] = edited_account_name.strip()
+                            snapshot["Type"] = edited_account_type
+                            snapshot["Section"] = selected_section
+
+                    st.success("Account updated.")
+                    st.rerun()
 
     st.markdown("### Add Asset Account")
     with st.form("asset_account_form", clear_on_submit=True):
@@ -169,36 +219,6 @@ with accounts_tab:
             use_container_width=True,
             hide_index=True,
         )
-
-        st.markdown("### Edit Account Name")
-        with st.form("rename_account_form", clear_on_submit=True):
-            account_to_rename = st.selectbox(
-                "Select account to rename",
-                current_accounts.sort_values(by=["Account Name"])["Account Name"].tolist(),
-            )
-            new_account_name = st.text_input("New account name")
-
-            rename_account = st.form_submit_button("Rename account")
-            if rename_account:
-                existing_names = {a["Account Name"].strip().lower() for a in st.session_state.accounts}
-                old_name_lower = account_to_rename.strip().lower()
-                new_name_lower = new_account_name.strip().lower()
-
-                if not new_account_name.strip():
-                    st.error("Please enter a new account name.")
-                elif new_name_lower != old_name_lower and new_name_lower in existing_names:
-                    st.error("That account name already exists.")
-                else:
-                    for account in st.session_state.accounts:
-                        if account["Account Name"] == account_to_rename:
-                            account["Account Name"] = new_account_name.strip()
-
-                    for snapshot in st.session_state.snapshots:
-                        if snapshot["Account Name"] == account_to_rename:
-                            snapshot["Account Name"] = new_account_name.strip()
-
-                    st.success("Account name updated.")
-                    st.rerun()
     else:
         st.info("No accounts yet. Add your first asset or liability account.")
 
