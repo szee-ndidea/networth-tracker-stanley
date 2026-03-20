@@ -80,8 +80,8 @@ def parse_amount(value):
 with st.sidebar:
     st.header("How to use this app")
     st.markdown("""
-**Accounts**  
-Create the accounts you want to track over time. Add asset accounts at the top of the Accounts tab and liability accounts below. You only need to create each account once.
+**Add/Edit Accounts**  
+Create the accounts you want to track over time. Add asset accounts at the top and liability accounts below. Use the account editor to update an existing account's name or type.
 
 **Update Balances**  
 Enter a full snapshot for a selected date by updating all tracked accounts. Use positive numbers for everything. Do not enter liabilities as negative values.
@@ -98,7 +98,7 @@ This app does not store data permanently. To continue using your data later, dow
 
 
 accounts_tab, update_tab, dashboard_tab, data_tab = st.tabs([
-    "Accounts",
+    "Add/Edit Accounts",
     "Update Balances",
     "Dashboard",
     "Download/Upload",
@@ -106,56 +106,7 @@ accounts_tab, update_tab, dashboard_tab, data_tab = st.tabs([
 
 
 with accounts_tab:
-    st.subheader("Accounts")
-    st.write("Create the accounts you want to track over time. Add asset accounts at the top and liability accounts below.")
-
     current_accounts = accounts_df()
-    if not current_accounts.empty:
-        st.markdown("### Edit Existing Account")
-        account_options = current_accounts.sort_values(by=["Account Name"])["Account Name"].tolist()
-        selected_account = st.selectbox("Select account to edit", account_options, key="edit_account_select")
-
-        selected_account_row = current_accounts[current_accounts["Account Name"] == selected_account].iloc[0]
-        selected_section = selected_account_row["Section"]
-        selected_type_list = st.session_state.asset_types if selected_section == "Asset" else st.session_state.liability_types
-        selected_type_index = selected_type_list.index(selected_account_row["Type"]) if selected_account_row["Type"] in selected_type_list else 0
-
-        with st.form("edit_account_form"):
-            edit_col1, edit_col2 = st.columns(2)
-            with edit_col1:
-                edited_account_name = st.text_input("Account name", value=selected_account_row["Account Name"])
-            with edit_col2:
-                edited_account_type = st.selectbox(
-                    "Type",
-                    selected_type_list,
-                    index=selected_type_index,
-                    key="edit_account_type_select",
-                )
-
-            save_account_changes = st.form_submit_button("Save account changes")
-            if save_account_changes:
-                existing_names = {a["Account Name"].strip().lower() for a in st.session_state.accounts}
-                old_name_lower = selected_account.strip().lower()
-                new_name_lower = edited_account_name.strip().lower()
-
-                if not edited_account_name.strip():
-                    st.error("Please enter an account name.")
-                elif new_name_lower != old_name_lower and new_name_lower in existing_names:
-                    st.error("That account name already exists.")
-                else:
-                    for account in st.session_state.accounts:
-                        if account["Account Name"] == selected_account:
-                            account["Account Name"] = edited_account_name.strip()
-                            account["Type"] = edited_account_type
-
-                    for snapshot in st.session_state.snapshots:
-                        if snapshot["Account Name"] == selected_account:
-                            snapshot["Account Name"] = edited_account_name.strip()
-                            snapshot["Type"] = edited_account_type
-                            snapshot["Section"] = selected_section
-
-                    st.success("Account updated.")
-                    st.rerun()
 
     st.markdown("### Add Asset Account")
     with st.form("asset_account_form", clear_on_submit=True):
@@ -181,6 +132,7 @@ with accounts_tab:
                     }
                 )
                 st.success("Asset account added.")
+                st.rerun()
 
     st.markdown("### Add Liability Account")
     with st.form("liability_account_form", clear_on_submit=True):
@@ -210,27 +162,87 @@ with accounts_tab:
                     }
                 )
                 st.success("Liability account added.")
+                st.rerun()
 
     st.markdown("### Current Accounts")
-    current_accounts = accounts_df()
     if not current_accounts.empty:
-        st.dataframe(
-            current_accounts.sort_values(by=["Section", "Type", "Account Name"]),
+        editable_accounts = current_accounts.sort_values(by=["Section", "Type", "Account Name"]).reset_index(drop=True).copy()
+        editable_accounts.insert(0, "Edit", False)
+
+        edited_accounts = st.data_editor(
+            editable_accounts,
             use_container_width=True,
             hide_index=True,
+            disabled=["Section"],
+            column_config={
+                "Edit": st.column_config.CheckboxColumn("Edit", help="Select one account to edit below"),
+                "Account Name": st.column_config.TextColumn("Account Name"),
+                "Section": st.column_config.TextColumn("Section"),
+                "Type": st.column_config.SelectboxColumn(
+                    "Type",
+                    options=sorted(set(st.session_state.asset_types + st.session_state.liability_types)),
+                ),
+            },
+            key="accounts_editor",
         )
+
+        selected_rows = edited_accounts[edited_accounts["Edit"] == True]
+
+        if len(selected_rows) == 1:
+            selected_row = selected_rows.iloc[0]
+            original_row = current_accounts[
+                (current_accounts["Account Name"] == selected_row["Account Name"]) |
+                (current_accounts["Account Name"] == editable_accounts.loc[selected_rows.index[0], "Account Name"])
+            ]
+            original_name = editable_accounts.loc[selected_rows.index[0], "Account Name"]
+            original_section = editable_accounts.loc[selected_rows.index[0], "Section"]
+            valid_types = st.session_state.asset_types if original_section == "Asset" else st.session_state.liability_types
+
+            st.markdown("### Edit Selected Account")
+            with st.form("edit_account_form"):
+                edit_col1, edit_col2 = st.columns(2)
+                with edit_col1:
+                    edited_account_name = st.text_input("Account name", value=selected_row["Account Name"])
+                with edit_col2:
+                    default_type = selected_row["Type"] if selected_row["Type"] in valid_types else valid_types[0]
+                    edited_account_type = st.selectbox(
+                        "Type",
+                        valid_types,
+                        index=valid_types.index(default_type),
+                        key="edit_account_type_select",
+                    )
+
+                save_account_changes = st.form_submit_button("Save account changes")
+                if save_account_changes:
+                    existing_names = {a["Account Name"].strip().lower() for a in st.session_state.accounts}
+                    old_name_lower = original_name.strip().lower()
+                    new_name_lower = edited_account_name.strip().lower()
+
+                    if not edited_account_name.strip():
+                        st.error("Please enter an account name.")
+                    elif new_name_lower != old_name_lower and new_name_lower in existing_names:
+                        st.error("That account name already exists.")
+                    else:
+                        for account in st.session_state.accounts:
+                            if account["Account Name"] == original_name:
+                                account["Account Name"] = edited_account_name.strip()
+                                account["Type"] = edited_account_type
+
+                        for snapshot in st.session_state.snapshots:
+                            if snapshot["Account Name"] == original_name:
+                                snapshot["Account Name"] = edited_account_name.strip()
+                                snapshot["Type"] = edited_account_type
+                                snapshot["Section"] = original_section
+
+                        st.success("Account updated.")
+                        st.rerun()
+        elif len(selected_rows) > 1:
+            st.info("Select only one account in the table to edit it.")
     else:
         st.info("No accounts yet. Add your first asset or liability account.")
 
 
 with update_tab:
-    st.subheader("Update Balances")
-    st.write(
-        "Enter one full snapshot for a date by updating all tracked accounts. "
-        "Use positive numbers for both assets and liabilities. "
-        "Do not enter liabilities as negative values."
-    )
-
     current_accounts = accounts_df()
     if current_accounts.empty:
         st.info("Add accounts first before entering balances.")
@@ -311,8 +323,6 @@ with update_tab:
 
 
 with dashboard_tab:
-    st.subheader("Dashboard")
-
     df = snapshots_df()
     if df.empty:
         st.info("Add accounts and save at least one full snapshot to view the dashboard.")
@@ -369,9 +379,6 @@ with dashboard_tab:
 
 
 with data_tab:
-    st.subheader("Download/Upload")
-    st.write("Download your current data or upload saved files to continue from a previous session.")
-
     st.warning(
         "Your data is only stored for the current session. "
         "To reuse the app later, download both CSV files and upload them next time."
