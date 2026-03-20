@@ -582,31 +582,30 @@ with dashboard_tab:
                         lower_close_pace_threshold = 0.95
                         upper_close_pace_threshold = 1.05
 
-                        pace_ratio = (
-                            historical_yearly_rate / required_yearly_rate
-                            if required_yearly_rate > 0 else 0.0
-                        )
-
-                        hist_text = format_percent(historical_yearly_rate)
-                        req_text = format_percent(required_yearly_rate)
-
                         if required_yearly_rate <= 0:
                             st.success("Your goal is already achieved or does not require additional growth.")
-                        elif pace_ratio > upper_close_pace_threshold:
-                            st.success(
-                                f"Your average yearly increase of approximately {hist_text} is on pace to achieve your goal. "
-                                f"That is above the required pace of about {req_text} per year."
-                            )
-                        elif lower_close_pace_threshold <= pace_ratio <= upper_close_pace_threshold:
-                            st.warning(
-                                f"Your average yearly increase of approximately {hist_text} is close to the pace needed to achieve your goal. "
-                                f"You need about {req_text} per year, so this could be close."
-                            )
                         else:
-                            st.error(
-                                f"Your average yearly increase of approximately {hist_text} is below the pace needed to achieve your goal. "
-                                f"You need about {req_text} per year to stay on track."
-                            )
+                            pace_ratio = historical_yearly_rate / required_yearly_rate
+                            hist_text = format_percent(historical_yearly_rate)
+                            req_text = format_percent(required_yearly_rate)
+
+                            if pace_ratio > upper_close_pace_threshold:
+                                st.success(
+                                    f"Your average yearly increase of approximately {hist_text} is on pace to achieve your goal. "
+                                    f"That is above the required pace of about {req_text} per year."
+                                )
+                            elif lower_close_pace_threshold <= pace_ratio <= upper_close_pace_threshold:
+                                with st.container(border=True):
+                                    st.markdown(
+                                        f"**Close to pace**  \n"
+                                        f"Your average yearly increase of approximately {hist_text} is close to the pace needed to achieve your goal. "
+                                        f"You need about {req_text} per year, so this could be close."
+                                    )
+                            else:
+                                st.error(
+                                    f"Your average yearly increase of approximately {hist_text} is below the pace needed to achieve your goal. "
+                                    f"You need about {req_text} per year to stay on track."
+                                )
                     else:
                         st.info("Average yearly percentage increase requires positive net worth values across your history and for your current snapshot.")
                 else:
