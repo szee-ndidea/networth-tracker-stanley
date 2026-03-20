@@ -56,7 +56,7 @@ init_state()
 def accounts_df():
     if st.session_state.accounts:
         return pd.DataFrame(st.session_state.accounts)
-    return pd.DataFrame(columns=["Account Name", "Section", "Type", "Notes"])
+    return pd.DataFrame(columns=["Account Name", "Section", "Type"])
 
 
 def snapshots_df():
@@ -65,7 +65,7 @@ def snapshots_df():
         df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
         df = df.dropna(subset=["Date"])
         return df
-    return pd.DataFrame(columns=["Date", "Account Name", "Section", "Type", "Amount", "Notes"])
+    return pd.DataFrame(columns=["Date", "Account Name", "Section", "Type", "Amount"])
 
 
 def parse_amount(value):
@@ -114,7 +114,6 @@ with accounts_tab:
             asset_account_name = st.text_input("Asset account name", placeholder="Example: Fidelity 401(k)")
         with col2:
             asset_selected_type = st.selectbox("Asset type", st.session_state.asset_types, key="asset_type_select")
-            asset_account_notes = st.text_input("Asset notes", placeholder="Optional")
 
         add_asset_account = st.form_submit_button("Add asset account")
         if add_asset_account:
@@ -129,7 +128,6 @@ with accounts_tab:
                         "Account Name": asset_account_name.strip(),
                         "Section": "Asset",
                         "Type": asset_selected_type,
-                        "Notes": asset_account_notes.strip(),
                     }
                 )
                 st.success("Asset account added.")
@@ -145,7 +143,6 @@ with accounts_tab:
                 st.session_state.liability_types,
                 key="liability_type_select",
             )
-            liability_account_notes = st.text_input("Liability notes", placeholder="Optional")
 
         add_liability_account = st.form_submit_button("Add liability account")
         if add_liability_account:
@@ -160,7 +157,6 @@ with accounts_tab:
                         "Account Name": liability_account_name.strip(),
                         "Section": "Liability",
                         "Type": liability_selected_type,
-                        "Notes": liability_account_notes.strip(),
                     }
                 )
                 st.success("Liability account added.")
@@ -245,7 +241,6 @@ with update_tab:
                         "Section": row["Section"],
                         "Type": row["Type"],
                         "Amount": parsed_amount,
-                        "Notes": row["Notes"],
                     }
                 )
 
@@ -363,23 +358,23 @@ with data_tab:
         if uploaded_accounts is not None:
             try:
                 df_accounts = pd.read_csv(uploaded_accounts)
-                required_account_cols = {"Account Name", "Section", "Type", "Notes"}
+                required_account_cols = {"Account Name", "Section", "Type"}
                 if required_account_cols.issubset(df_accounts.columns):
-                    df_accounts = df_accounts[["Account Name", "Section", "Type", "Notes"]].fillna("")
+                    df_accounts = df_accounts[["Account Name", "Section", "Type"]].fillna("")
                     st.session_state.accounts = df_accounts.to_dict("records")
                     loaded_any = True
                 else:
-                    st.error("Accounts CSV is missing required columns: Account Name, Section, Type, Notes")
+                    st.error("Accounts CSV is missing required columns: Account Name, Section, Type")
             except Exception as e:
                 st.error(f"Could not load accounts CSV: {e}")
 
         if uploaded_snapshots is not None:
             try:
                 df_snapshots = pd.read_csv(uploaded_snapshots)
-                required_snapshot_cols = {"Date", "Account Name", "Section", "Type", "Amount", "Notes"}
+                required_snapshot_cols = {"Date", "Account Name", "Section", "Type", "Amount"}
                 if required_snapshot_cols.issubset(df_snapshots.columns):
                     df_snapshots = df_snapshots[
-                        ["Date", "Account Name", "Section", "Type", "Amount", "Notes"]
+                        ["Date", "Account Name", "Section", "Type", "Amount"]
                     ].copy()
                     df_snapshots["Date"] = pd.to_datetime(df_snapshots["Date"], errors="coerce")
                     df_snapshots["Amount"] = pd.to_numeric(df_snapshots["Amount"], errors="coerce")
@@ -390,7 +385,7 @@ with data_tab:
                 else:
                     st.error(
                         "Snapshots CSV is missing required columns: "
-                        "Date, Account Name, Section, Type, Amount, Notes"
+                        "Date, Account Name, Section, Type, Amount"
                     )
             except Exception as e:
                 st.error(f"Could not load snapshots CSV: {e}")
