@@ -14,9 +14,16 @@ def init_state():
             "Cash",
             "Checking",
             "Savings",
+            "Money Market",
+            "Certificate of Deposit",
             "Brokerage",
             "Retirement",
+            "HSA",
+            "529 Plan",
             "Real Estate",
+            "Vehicle",
+            "Physical Item",
+            "Business Ownership",
             "Crypto",
             "Other",
         ]
@@ -26,9 +33,13 @@ def init_state():
             "Credit Card",
             "Student Loan",
             "Mortgage",
+            "HELOC",
             "Auto Loan",
             "Personal Loan",
+            "Medical Debt",
             "Tax Debt",
+            "Business Loan",
+            "Buy Now Pay Later",
             "Other",
         ]
 
@@ -66,39 +77,6 @@ def parse_amount(value):
     return float(cleaned)
 
 
-with st.sidebar:
-    st.header("Manage Types")
-
-    st.subheader("Add Asset Type")
-    new_asset_type = st.text_input("New asset type", key="new_asset_type")
-    if st.button("Add asset type"):
-        value = new_asset_type.strip()
-        if value and value not in st.session_state.asset_types:
-            st.session_state.asset_types.append(value)
-            st.session_state.asset_types = sorted(set(st.session_state.asset_types))
-            st.success(f"Added asset type: {value}")
-        elif value:
-            st.warning("That asset type already exists.")
-
-    st.subheader("Add Debt Type")
-    new_debt_type = st.text_input("New debt type", key="new_debt_type")
-    if st.button("Add debt type"):
-        value = new_debt_type.strip()
-        if value and value not in st.session_state.debt_types:
-            st.session_state.debt_types.append(value)
-            st.session_state.debt_types = sorted(set(st.session_state.debt_types))
-            st.success(f"Added debt type: {value}")
-        elif value:
-            st.warning("That debt type already exists.")
-
-    st.divider()
-    st.write("**Current asset types**")
-    st.write(", ".join(st.session_state.asset_types))
-
-    st.write("**Current debt types**")
-    st.write(", ".join(st.session_state.debt_types))
-
-
 accounts_tab, update_tab, dashboard_tab, data_tab = st.tabs([
     "Accounts",
     "Update Balances",
@@ -115,10 +93,12 @@ with accounts_tab:
         col1, col2 = st.columns(2)
         with col1:
             account_name = st.text_input("Account name", placeholder="Example: Fidelity 401(k)")
-            section = st.selectbox("Is this an asset or debt?", ["Asset", "Debt"])
+            section = st.radio("Is this an asset or debt?", ["Asset", "Debt"], horizontal=True)
         with col2:
-            type_options = st.session_state.asset_types if section == "Asset" else st.session_state.debt_types
-            selected_type = st.selectbox("Asset or debt type", type_options)
+            if section == "Asset":
+                selected_type = st.selectbox("Asset type", st.session_state.asset_types, key="asset_type_select")
+            else:
+                selected_type = st.selectbox("Debt type", st.session_state.debt_types, key="debt_type_select")
             account_notes = st.text_input("Notes", placeholder="Optional")
 
         add_account = st.form_submit_button("Add account")
@@ -331,16 +311,6 @@ with data_tab:
                 if required_account_cols.issubset(df_accounts.columns):
                     df_accounts = df_accounts[["Account Name", "Section", "Type", "Notes"]].fillna("")
                     st.session_state.accounts = df_accounts.to_dict("records")
-                    st.session_state.asset_types = sorted(
-                        set(st.session_state.asset_types).union(
-                            df_accounts.loc[df_accounts["Section"] == "Asset", "Type"].astype(str).tolist()
-                        )
-                    )
-                    st.session_state.debt_types = sorted(
-                        set(st.session_state.debt_types).union(
-                            df_accounts.loc[df_accounts["Section"] == "Debt", "Type"].astype(str).tolist()
-                        )
-                    )
                     loaded_any = True
                 else:
                     st.error("Accounts CSV is missing required columns: Account Name, Section, Type, Notes")
